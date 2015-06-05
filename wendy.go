@@ -1,20 +1,8 @@
-package pastry
+package wendy
 
 import (
 	"errors"
 	"fmt"
-)
-
-type reqMode int
-
-const (
-	mode_set = reqMode(iota)
-	mode_get
-	mode_del
-	mode_prx
-	mode_scan
-	mode_dump
-	mode_beat // For getting the nodes that need a heartbeat
 )
 
 const (
@@ -23,7 +11,7 @@ const (
 	LogLevelError
 )
 
-// Application is an interface that other packages can fulfill to hook into Pastry.
+// Application is an interface that other packages can fulfill to hook into Wendy.
 //
 // OnError is called on errors that are even remotely recoverable, passing the error that was raised.
 //
@@ -41,7 +29,7 @@ const (
 type Application interface {
 	OnError(err error)
 	OnDeliver(msg Message)
-	OnForward(msg *Message, nextId NodeID) bool // return False if Pastry should not forward
+	OnForward(msg *Message, nextId NodeID) bool // return False if Wendy should not forward
 	OnNewLeaves(leafset []*Node)
 	OnNodeJoin(node Node)
 	OnNodeExit(node Node)
@@ -65,55 +53,10 @@ func (p Passphrase) Marshal() []byte {
 	return []byte(p)
 }
 
-// The below types are used in ensuring concurrency safety within the state tables
-
-type getRequest struct {
-	id       NodeID
-	strict   bool
-	err      chan error
-	response chan *Node
-}
-
-type dumpRequest struct {
-	response chan []*Node
-}
-
-type removeRequest struct {
-	id       NodeID
-	err      chan error
-	response chan *Node
-}
-
-type insertRequest struct {
-	node     *Node
-	err      chan error
-	tablePos chan routingTablePosition
-	leafPos  chan leafSetPosition
-}
-
 // Errors!
 var deadNodeError = errors.New("Node did not respond to heartbeat.")
 var nodeNotFoundError = errors.New("Node not found.")
 var impossibleError = errors.New("This error should never be reached. It's logically impossible.")
-
-// TimeoutError represents an error that was raised when a call has taken too long. It is its own type for the purposes of handling the error.
-type TimeoutError struct {
-	Action  string
-	Timeout int
-}
-
-// Error returns the TimeoutError as a string and fulfills the error interface.
-func (t TimeoutError) Error() string {
-	return fmt.Sprintf("Timeout error: %s took more than %v seconds.", t.Action, t.Timeout)
-}
-
-// throwTimeout creates a new TimeoutError from the action and timeout specified.
-func throwTimeout(action string, timeout int) TimeoutError {
-	return TimeoutError{
-		Action:  action,
-		Timeout: timeout,
-	}
-}
 
 // IdentityError represents an error that was raised when a Node attempted to perform actions on its state tables using its own ID, which is problematic. It is its own type for the purposes of handling the error.
 type IdentityError struct {

@@ -1,10 +1,10 @@
-package pastry
+package wendy
 
 import (
 	"testing"
 )
 
-// Test insertion of a node into the routing table
+// Test insertion of a node into the leaf set
 func TestLeafSetinsertNode(t *testing.T) {
 	self_id, err := NodeIDFromBytes([]byte("this is a test Node for testing purposes only."))
 	if err != nil {
@@ -21,8 +21,6 @@ func TestLeafSetinsertNode(t *testing.T) {
 	t.Logf("%s\n", other_id.String())
 	t.Logf("Diff: %v\n", self_id.Diff(other_id))
 	leafset := newLeafSet(self)
-	go leafset.listen()
-	defer leafset.stop()
 	r, err := leafset.insertNode(*other)
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -42,39 +40,6 @@ func TestLeafSetinsertNode(t *testing.T) {
 	}
 }
 
-// Test handling of a Node being inserted twice.
-func TestLeafSetDoubleinsertNode(t *testing.T) {
-	self_id, err := NodeIDFromBytes([]byte("this is a test Node for testing purposes only."))
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
-	self := NewNode(self_id, "127.0.0.1", "127.0.0.1", "testing", 55555)
-
-	other_id, err := NodeIDFromBytes([]byte("this is some other Node for testing purposes only."))
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
-	other := NewNode(other_id, "127.0.0.2", "127.0.0.2", "testing", 55555)
-	t.Log(other)
-	leafset := newLeafSet(self)
-	go leafset.listen()
-	defer leafset.stop()
-	r, err := leafset.insertNode(*other)
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
-	if r == nil {
-		t.Fatalf("First insert returned a nil response.")
-	}
-	r2, err := leafset.insertNode(*other)
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
-	if r2 != nil {
-		t.Fatalf("Expected a nil response, got %s instead.", r2.ID)
-	}
-}
-
 // Test deleting the only node from the leafset
 func TestLeafSetDeleteOnly(t *testing.T) {
 	self_id, err := NodeIDFromBytes([]byte("this is a test Node for testing purposes only."))
@@ -89,8 +54,6 @@ func TestLeafSetDeleteOnly(t *testing.T) {
 	}
 	other := NewNode(other_id, "127.0.0.2", "127.0.0.2", "testing", 55555)
 	leafset := newLeafSet(self)
-	go leafset.listen()
-	defer leafset.stop()
 	r, err := leafset.insertNode(*other)
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -139,8 +102,6 @@ func TestLeafSetDeleteFirst(t *testing.T) {
 		t.Fatalf("Expected %v, got %v.", first_side, second_side)
 	}
 	leafset := newLeafSet(self)
-	go leafset.listen()
-	defer leafset.stop()
 	r, err := leafset.insertNode(*other)
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -213,8 +174,6 @@ func TestLeafSetDeleteLast(t *testing.T) {
 		t.Fatalf("Expected %v, got %v.", first_side, second_side)
 	}
 	leafset := newLeafSet(self)
-	go leafset.listen()
-	defer leafset.stop()
 	r, err := leafset.insertNode(*other)
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -293,8 +252,6 @@ func TestLeafSetDeleteMiddle(t *testing.T) {
 		t.Fatalf("Nodes not all on same side. %v, %v, %v", first_side, second_side, third_side)
 	}
 	leafset := newLeafSet(self)
-	go leafset.listen()
-	defer leafset.stop()
 	r, err := leafset.insertNode(*first)
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -391,8 +348,6 @@ func TestLeafSetScanSplit(t *testing.T) {
 	self := NewNode(self_id, "127.0.0.1", "127.0.0.1", "testing", 55555)
 
 	leafset := newLeafSet(self)
-	go leafset.listen()
-	defer leafset.stop()
 
 	first_id, err := NodeIDFromBytes([]byte("12345677890abcde"))
 	if err != nil {
@@ -460,8 +415,6 @@ func TestLeafSetRouteOnly(t *testing.T) {
 	self := NewNode(self_id, "127.0.0.1", "127.0.0.1", "testing", 55555)
 
 	leafset := newLeafSet(self)
-	go leafset.listen()
-	defer leafset.stop()
 
 	first_id, err := NodeIDFromBytes([]byte("1234567890acdefg"))
 	if err != nil {
@@ -505,8 +458,6 @@ func TestLeafSetRouteMatch(t *testing.T) {
 	self := NewNode(self_id, "127.0.0.1", "127.0.0.1", "testing", 55555)
 
 	leafset := newLeafSet(self)
-	go leafset.listen()
-	defer leafset.stop()
 
 	first_id, err := NodeIDFromBytes([]byte("1234567890acdefg"))
 	if err != nil {
@@ -548,8 +499,6 @@ func TestLeafSetRouteNoneContained(t *testing.T) {
 	self := NewNode(self_id, "127.0.0.1", "127.0.0.1", "testing", 55555)
 
 	leafset := newLeafSet(self)
-	go leafset.listen()
-	defer leafset.stop()
 
 	first_id, err := NodeIDFromBytes([]byte("1234567890abcdeh"))
 	if err != nil {
@@ -589,8 +538,6 @@ func TestLeafSetRouteNoneCloser(t *testing.T) {
 	self := NewNode(self_id, "127.0.0.1", "127.0.0.1", "testing", 55555)
 
 	leafset := newLeafSet(self)
-	go leafset.listen()
-	defer leafset.stop()
 
 	first_id, err := NodeIDFromBytes([]byte("1234567890abcdez"))
 	if err != nil {
@@ -624,5 +571,123 @@ func TestLeafSetRouteNoneCloser(t *testing.T) {
 	}
 	if r3 != nil {
 		t.Fatalf("Expected nil result, got %s instead.", r3.ID)
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////
+////////////////////////// Benchmarks ////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+
+// How fast can we insert nodes
+func BenchmarkLeafSetInsert(b *testing.B) {
+	b.StopTimer()
+	selfId, err := NodeIDFromBytes([]byte("this is a test Node for testing purposes only."))
+	if err != nil {
+		b.Fatalf(err.Error())
+	}
+	self := NewNode(selfId, "127.0.0.1", "127.0.0.1", "testing", 55555)
+
+	leafset := newLeafSet(self)
+	benchRand.Seed(randSeed)
+
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		otherId := randomNodeID()
+		other := *NewNode(otherId, "127.0.0.1", "127.0.0.2", "testing", 55555)
+		_, err = leafset.insertNode(other)
+	}
+}
+
+// How fast can we retrieve nodes by ID
+func BenchmarkLeafSetGetByID(b *testing.B) {
+	b.StopTimer()
+	selfId, err := NodeIDFromBytes([]byte("this is a test Node for testing purposes only."))
+	if err != nil {
+		b.Fatalf(err.Error())
+	}
+	self := NewNode(selfId, "127.0.0.1", "127.0.0.1", "testing", 55555)
+
+	leafset := newLeafSet(self)
+	benchRand.Seed(randSeed)
+
+	otherId := randomNodeID()
+	other := *NewNode(otherId, "127.0.0.2", "127.0.0.2", "testing", 55555)
+	_, err = leafset.insertNode(other)
+	if err != nil {
+		b.Fatalf(err.Error())
+	}
+
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		leafset.getNode(other.ID)
+	}
+}
+
+var benchLeafSet *leafSet
+
+func initBenchLeafSet(b *testing.B) {
+	selfId, err := NodeIDFromBytes([]byte("this is a test Node for testing purposes only."))
+	if err != nil {
+		b.Fatalf(err.Error())
+	}
+	self := NewNode(selfId, "127.0.0.1", "127.0.0.1", "testing", 55555)
+	benchLeafSet = newLeafSet(self)
+	benchRand.Seed(randSeed)
+
+	for i := 0; i < 100000; i++ {
+		id := randomNodeID()
+		node := NewNode(id, "127.0.0.1", "127.0.0.1", "testing", 55555)
+		_, err = benchLeafSet.insertNode(*node)
+		if err != nil {
+			b.Fatal(err.Error())
+		}
+	}
+}
+
+// How fast can we route messages
+func BenchmarkLeafSetRoute(b *testing.B) {
+	b.StopTimer()
+	if benchLeafSet == nil {
+		initBenchLeafSet(b)
+	}
+	benchRand.Seed(randSeed)
+	b.StartTimer()
+
+	for i := 0; i < b.N; i++ {
+		id := randomNodeID()
+		_, err := benchLeafSet.route(id)
+		if err != nil && err != nodeNotFoundError {
+			if _, ok := err.(IdentityError); !ok {
+				b.Fatalf(err.Error())
+			}
+		}
+	}
+}
+
+// How fast can we dump the leafset
+func BenchmarkLeafSetDump(b *testing.B) {
+	b.StopTimer()
+	if benchLeafSet == nil {
+		initBenchLeafSet(b)
+	}
+	benchRand.Seed(randSeed)
+	b.StartTimer()
+
+	for i := 0; i < b.N; i++ {
+		benchLeafSet.list()
+	}
+}
+
+// How fast can we export the leafset
+func BenchmarkLeafSetExport(b *testing.B) {
+	b.StopTimer()
+	if benchLeafSet == nil {
+		initBenchLeafSet(b)
+	}
+	benchRand.Seed(randSeed)
+	b.StartTimer()
+
+	for i := 0; i < b.N; i++ {
+		benchLeafSet.export()
 	}
 }

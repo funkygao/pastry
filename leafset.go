@@ -1,27 +1,19 @@
-package pastry
+package wendy
 
 import (
+	"errors"
 	"log"
 	"os"
-	"runtime"
-	"time"
+	"sync"
 )
-
-type leafSetPosition struct {
-	left     bool
-	pos      int
-	inserted bool
-}
 
 type leafSet struct {
 	self     *Node
 	left     [16]*Node
 	right    [16]*Node
-	kill     chan bool
 	log      *log.Logger
 	logLevel int
-	timeout  int
-	request  chan interface{}
+	lock     *sync.RWMutex
 }
 
 func newLeafSet(self *Node) *leafSet {
@@ -29,173 +21,52 @@ func newLeafSet(self *Node) *leafSet {
 		self:     self,
 		left:     [16]*Node{},
 		right:    [16]*Node{},
-		kill:     make(chan bool),
-		log:      log.New(os.Stdout, "pastry#leafSet("+self.ID.String()+")", log.LstdFlags),
+		log:      log.New(os.Stdout, "wendy#leafSet("+self.ID.String()+")", log.LstdFlags),
 		logLevel: LogLevelWarn,
-		timeout:  1,
-		request:  make(chan interface{}),
+		lock:     new(sync.RWMutex),
 	}
 }
 
-func (l *leafSet) stop() {
-	l.kill <- true
-}
-
-func (l *leafSet) listen() {
-	for {
-		runtime.Gosched()
-		select {
-		case request, ok := <-l.request:
-			if !ok {
-				panic("Listen channel closed?")
-			}
-			switch r := request.(type) {
-			case getRequest:
-				if r.strict {
-					l.get(r.id, r.response, r.err)
-				} else {
-					l.scan(r.id, r.response, r.err)
-				}
-				break
-			case dumpRequest:
-				l.dump(r.response)
-				break
-			case insertRequest:
-				l.debug("Insert request routed.")
-				l.insert(r.node, r.leafPos, r.err)
-				break
-			case removeRequest:
-				l.remove(r.id, r.response, r.err)
-				break
-			}
-			break
-		case _, ok := <-l.kill:
-			if !ok {
-				panic("kill channel closed?")
-			}
-			return
-		}
-	}
-}
+var lsDuplicateInsertError = errors.New("Node already exists in leaf set.")
 
 func (l *leafSet) insertNode(node Node) (*Node, error) {
-	return l.insertValues(node.ID, node.LocalIP, node.GlobalIP, node.Region, node.Port)
+	return l.insertValues(node.ID, node.LocalIP, node.GlobalIP, node.Region, node.Port, node.routingTableVersion, node.leafsetVersion, node.neighborhoodSetVersion)
 }
 
-func (l *leafSet) insertValues(id NodeID, localIP, globalIP, region string, port int) (*Node, error) {
-	l.debug("Insert request received.")
+func (l *leafSet) insertValues(id NodeID, localIP, globalIP, region string, port int, rTVersion, lSVersion, nSVersion uint64) (*Node, error) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
 	node := NewNode(id, localIP, globalIP, region, port)
-	pos := make(chan leafSetPosition)
-	err := make(chan error)
-	l.request <- insertRequest{
-		node:    node,
-		err:     err,
-		leafPos: pos,
-	}
-	l.debug("Request sent.")
-	select {
-	case p := <-pos:
-		l.debug("Response received.")
-		if !p.inserted {
-			return nil, nil
-		}
-		return node, nil
-	case e := <-err:
-		l.debug("Error received.")
-		return nil, e
-	case <-time.After(time.Duration(l.timeout) * time.Second):
-		l.debug("Timeout received.")
-		return nil, throwTimeout("LeafSet insertion", l.timeout)
-	}
-	panic("Should not be reached")
-	return nil, nil
-}
-
-func (l *leafSet) insert(node *Node, poschan chan leafSetPosition, errchan chan error) {
-	l.debug("Inserting...")
-	if node == nil {
-		l.debug("Node is nil. Throwing invalid argument error.")
-		errchan <- throwInvalidArgumentError("Can't insert a nil Node into the leaf set.")
-		return
-	}
-	var pos int
-	var inserted bool
+	node.updateVersions(rTVersion, lSVersion, nSVersion)
 	side := l.self.ID.RelPos(node.ID)
+	var inserted, contained bool
 	if side == -1 {
-		l.debug("Node goes on the left.")
-		l.left, pos, inserted = node.insertIntoArray(l.left, l.self)
-		if pos > -1 {
-			l.debug("Replying to request...")
-			poschan <- leafSetPosition{
-				pos:      pos,
-				left:     true,
-				inserted: inserted,
-			}
-			l.debug("Replied to request.")
-			return
+		l.left, contained, inserted = node.insertIntoArray(l.left, l.self)
+		if !contained {
+			return nil, nil
+		} else if !inserted {
+			return nil, lsDuplicateInsertError
+		} else {
+			l.self.incrementLSVersion()
+			return node, nil
 		}
 	} else if side == 1 {
-		l.debug("Node goes on the right.")
-		l.right, pos, inserted = node.insertIntoArray(l.right, l.self)
-		if pos > -1 {
-			l.debug("Replying to request...")
-			poschan <- leafSetPosition{
-				pos:      pos,
-				left:     false,
-				inserted: inserted,
-			}
-			l.debug("Replied to request")
-			return
+		l.right, contained, inserted = node.insertIntoArray(l.right, l.self)
+		if !contained {
+			return nil, nil
+		} else if !inserted {
+			return nil, lsDuplicateInsertError
+		} else {
+			l.self.incrementLSVersion()
+			return node, nil
 		}
 	}
-	l.debug("Oops, tried to insert myself in my own leafset. Throwing IdentityError.")
-	errchan <- throwIdentityError("insert", "into", "leaf set")
-	return
+	return nil, throwIdentityError("insert", "into", "leaf set")
 }
 
 func (l *leafSet) getNode(id NodeID) (*Node, error) {
-	resp := make(chan *Node)
-	err := make(chan error)
-	l.request <- getRequest{
-		id:       id,
-		strict:   true,
-		err:      err,
-		response: resp,
-	}
-	select {
-	case node := <-resp:
-		return node, nil
-	case e := <-err:
-		return nil, e
-	case <-time.After(time.Duration(l.timeout) * time.Second):
-		return nil, throwTimeout("LeafSet retrieval", l.timeout)
-	}
-	panic("Should not be reached")
-	return nil, nil
-}
-
-func (l *leafSet) route(key NodeID) (*Node, error) {
-	resp := make(chan *Node)
-	err := make(chan error)
-	l.request <- getRequest{
-		id:       key,
-		strict:   false,
-		err:      err,
-		response: resp,
-	}
-	select {
-	case node := <-resp:
-		return node, nil
-	case e := <-err:
-		return nil, e
-	case <-time.After(time.Duration(l.timeout) * time.Second):
-		return nil, throwTimeout("LeafSet routing", l.timeout)
-	}
-	panic("Should not be reached")
-	return nil, nil
-}
-
-func (l *leafSet) get(id NodeID, resp chan *Node, err chan error) {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
 	side := l.self.ID.RelPos(id)
 	if side == -1 {
 		for _, node := range l.left {
@@ -203,8 +74,7 @@ func (l *leafSet) get(id NodeID, resp chan *Node, err chan error) {
 				break
 			}
 			if id.Equals(node.ID) {
-				resp <- node
-				return
+				return node, nil
 			}
 		}
 	} else if side == 1 {
@@ -213,21 +83,61 @@ func (l *leafSet) get(id NodeID, resp chan *Node, err chan error) {
 				break
 			}
 			if id.Equals(node.ID) {
-				resp <- node
-				return
+				return node, nil
 			}
 		}
 	} else {
-		err <- throwIdentityError("get", "from", "leaf set")
-		return
+		return nil, throwIdentityError("get", "from", "leaf set")
 	}
-	err <- nodeNotFoundError
-	return
+	return nil, nodeNotFoundError
 }
 
-func (l *leafSet) scan(key NodeID, resp chan *Node, err chan error) {
-	defer close(resp)
-	defer close(err)
+func (l *leafSet) getNextNode(id NodeID) (*Node, error) {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	side := l.self.ID.RelPos(id)
+	last := -1
+	if side == -1 {
+		for pos, node := range l.left {
+			if node == nil {
+				continue
+			} else {
+				last = pos
+				if node.ID.Less(id) {
+					return node, nil
+				}
+				continue
+			}
+		}
+		if last > -1 {
+			return l.left[last], nil
+		}
+		return nil, nodeNotFoundError
+	} else if side == 1 {
+		for pos, node := range l.right {
+			if node == nil {
+				continue
+			} else {
+				last = pos
+				if id.Less(node.ID) {
+					return node, nil
+				}
+				continue
+			}
+		}
+		if last > -1 {
+			return l.left[last], nil
+		}
+		return nil, nodeNotFoundError
+	} else {
+		return nil, throwIdentityError("get next", "from", "leaf set")
+	}
+	return nil, nodeNotFoundError
+}
+
+func (l *leafSet) route(key NodeID) (*Node, error) {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
 	side := l.self.ID.RelPos(key)
 	best_score := l.self.ID.Diff(key)
 	best := l.self
@@ -258,39 +168,25 @@ func (l *leafSet) scan(key NodeID, resp chan *Node, err chan error) {
 		}
 	}
 	if biggest.Less(key) {
-		err <- nodeNotFoundError
-		return
+		return nil, nodeNotFoundError
 	}
 	if !best.ID.Equals(l.self.ID) {
-		resp <- best
-		return
+		return best, nil
 	} else {
-		err <- throwIdentityError("route to", "in", "leaf set")
-		return
+		return nil, throwIdentityError("route to", "in", "leaf set")
 	}
-	err <- nodeNotFoundError
-	return
+	return nil, nodeNotFoundError
 }
 
-func (l *leafSet) export() ([]*Node, error) {
-	resp := make(chan []*Node)
-	err := make(chan error)
-	l.request <- dumpRequest{
-		response: resp,
-	}
-	select {
-	case nodes := <-resp:
-		return nodes, nil
-	case e := <-err:
-		return nil, e
-	case <-time.After(time.Duration(l.timeout) * time.Second):
-		return nil, throwTimeout("LeafSet dump", l.timeout)
-	}
-	panic("Should not be reached")
-	return nil, nil
+func (l *leafSet) export() [2][16]*Node {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	return [2][16]*Node{l.left, l.right}
 }
 
-func (l *leafSet) dump(resp chan []*Node) {
+func (l *leafSet) list() []*Node {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
 	nodes := []*Node{}
 	for _, node := range l.left {
 		if node != nil {
@@ -302,10 +198,10 @@ func (l *leafSet) dump(resp chan []*Node) {
 			nodes = append(nodes, node)
 		}
 	}
-	resp <- nodes
+	return nodes
 }
 
-func (node *Node) insertIntoArray(array [16]*Node, center *Node) ([16]*Node, int, bool) {
+func (node *Node) insertIntoArray(array [16]*Node, center *Node) ([16]*Node, bool, bool) {
 	var result [16]*Node
 	result_index := 0
 	src_index := 0
@@ -322,6 +218,7 @@ func (node *Node) insertIntoArray(array [16]*Node, center *Node) ([16]*Node, int
 			break
 		}
 		if node.ID.Equals(array[src_index].ID) {
+			node.updateVersions(array[src_index].routingTableVersion, array[src_index].leafsetVersion, array[src_index].neighborhoodSetVersion)
 			pos = result_index
 			result_index += 1
 			src_index += 1
@@ -336,34 +233,15 @@ func (node *Node) insertIntoArray(array [16]*Node, center *Node) ([16]*Node, int
 		}
 		result_index += 1
 	}
-	return result, pos, inserted
+	return result, pos > -1, inserted
 }
 
 func (l *leafSet) removeNode(id NodeID) (*Node, error) {
-	resp := make(chan *Node)
-	err := make(chan error)
-	l.request <- removeRequest{
-		id:       id,
-		err:      err,
-		response: resp,
-	}
-	select {
-	case node := <-resp:
-		return node, nil
-	case e := <-err:
-		return nil, e
-	case <-time.After(time.Duration(l.timeout) * time.Second):
-		return nil, throwTimeout("LeafSet removal", l.timeout)
-	}
-	panic("Should not be reached")
-	return nil, nil
-}
-
-func (l *leafSet) remove(id NodeID, resp chan *Node, err chan error) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
 	side := l.self.ID.RelPos(id)
 	if side == 0 {
-		err <- throwIdentityError("remove", "from", "leaf set")
-		return
+		return nil, throwIdentityError("remove", "from", "leaf set")
 	}
 	pos := -1
 	var n *Node
@@ -385,8 +263,7 @@ func (l *leafSet) remove(id NodeID, resp chan *Node, err chan error) {
 		}
 	}
 	if pos == -1 || (side == -1 && pos > len(l.left)) || (side == 1 && pos > len(l.right)) {
-		err <- nodeNotFoundError
-		return
+		return nil, nodeNotFoundError
 	}
 	var slice []*Node
 	if side == -1 {
@@ -424,8 +301,8 @@ func (l *leafSet) remove(id NodeID, resp chan *Node, err chan error) {
 			}
 		}
 	}
-	resp <- n
-	return
+	l.self.incrementLSVersion()
+	return n, nil
 }
 
 func (l *leafSet) debug(format string, v ...interface{}) {

@@ -1,44 +1,44 @@
-# Pastry
+# Wendy
 
 An open source, pure-[Go](http://www.golang.org "Pretty much the best programming language ever") implementation of the [Pastry Distributed Hash Table](http://en.wikipedia.org/wiki/Pastry_(DHT\) "Pastry on Wikipedia").
 
 ## Status
-[![Build Status](https://secure.travis-ci.org/secondbit/pastry.png)](http://travis-ci.org/secondbit/pastry)
+[![Build Status](https://secure.travis-ci.org/secondbit/wendy.png)](http://travis-ci.org/secondbit/wendy)
 
-**Alpha**: Pastry is still in active development. It should not be used for mission-critical software. While it *appears* to function as it should, we're still testing it to make sure there aren't any issues.
+**Beta1**: Wendy is still in active development. It should not be used for mission-critical software. It has been beat on a little, but there are probably still bugs we haven't found or fixed.
 
 ## Requirements
 
-This implementation of Pastry is written to be compatible with Go 1. It uses nothing outside of the Go standard library. Nodes in the network must be able to communicate using TCP over a configurable port. Nodes also must be able to have long-running processes.
+This implementation of Wendy is written to be compatible with Go 1. It uses nothing outside of the Go standard library. Nodes in the network must be able to communicate using TCP over a configurable port. Nodes also must be able to have long-running processes.
 
-Pastry was developed on OS X 10.8.1, using Go 1.0.3. It has been verified to work as expected running under Ubuntu 12.04 LTS (64-bit), using Go 1.0.3.
+Wendy was developed on OS X 10.8.1, using Go 1.0.3. It has been verified to work as expected running under Ubuntu 12.04 LTS (64-bit), using Go 1.0.3.
 
 ## Installation
 
-The typical `go get secondbit.org/pastry` will install Pastry.
+The typical `go get secondbit.org/wendy` will install Wendy.
 
 ## Documentation
 
-We took pains to try and follow [the guidelines](http://golang.org/doc/articles/godoc_documenting_go_code.html "Godoc guidelines on golang.org") on writing good documentation for `godoc`. You can view the generated documentation on the excellent [GoPkgDoc](http://go.pkgdoc.org/secondbit.org/pastry "Pastry's documentation on GoPkgDoc").
+We took pains to try and follow [the guidelines](http://golang.org/doc/articles/godoc_documenting_go_code.html "Godoc guidelines on golang.org") on writing good documentation for `godoc`. You can view the generated documentation on the excellent [godoc.org](http://godoc.org/secondbit.org/wendy "Wendy's documentation on godoc.org").
 
 ## Use
 
 ### Initialising the Cluster
 
-The "Cluster" represents your network of nodes. The first thing you should do in any application that uses Pastry is initialise the cluster.
+The "Cluster" represents your network of nodes. The first thing you should do in any application that uses Wendy is initialise the cluster.
 
-First, you need to create the local Node&mdash;because Pastry is a peer-to-peer algorithm, there's no such thing as a server or client; instead, everything is a "Node", and only Nodes can connect to the Cluster.
+First, you need to create the local Node&mdash;because Wendy is a peer-to-peer algorithm, there's no such thing as a server or client; instead, everything is a "Node", and only Nodes can connect to the Cluster.
 
 ```go
 hostname, err := os.Hostname()
 if err != nil {
 	panic(err.Error())
 }
-id, err := pastry.NodeIDFromBytes([]byte(hostname+" test server"))
+id, err := wendy.NodeIDFromBytes([]byte(hostname))
 if err != nil {
 	panic(err.Error())
 }
-node := pastry.NewNode(id, "your_local_ip_address", "your_global_ip_address", "your_region", 8080)
+node := wendy.NewNode(id, "your_local_ip_address", "your_global_ip_address", "your_region", 8080)
 ```
 
 NewNode expects five parameters:
@@ -46,18 +46,18 @@ NewNode expects five parameters:
 1. The ID of the new Node. We created one in the code sample above. The ID can be any unique string&mdash;it is used to identify the Node to the network. The ID string has to be over 16 bytes long to be substantial enough to form an ID out of, or NodeIDFromBytes will return an error.
 2. Your local IP address. This IP address only needs to be accessible to your Region (a concept that will be explained below).
 3. Your global IP address. This IP address should be accessible to any Node in your network&mdash;the entire Internet should be able to reach the IP.
-4. Your Region. Your Region is a string that helps segment your Pastry network to keep bandwidth minimal. For cloud providers (e.g., EC2), network traffic within a region is free. To take advantage of this, we modified the Pastry algorithm to use the local IP address when two Nodes are in the same Region, and the global IP address the rest of the time, while heavily favouring Nodes that are in the same Region. This allows you to have Nodes in multiple Regions in the same Cluster while minimising your bandwidth costs.
-5. The port this Node should listen on, as an int. Should be an open port you have permission to listen on.
+4. Your Region. Your Region is a string that helps segment your Wendy network to keep bandwidth minimal. For cloud providers (e.g., EC2), network traffic within a region is free. To take advantage of this, we modified the Wendy algorithm to use the local IP address when two Nodes are in the same Region, and the global IP address the rest of the time, while heavily favouring Nodes that are in the same Region. This allows you to have Nodes in multiple Regions in the same Cluster while minimising your bandwidth costs.
+5. The port this Node should listen on, as an int. Should be an open port you have permission to listen on. If you use `0`, Wendy will automatically use a randomly chosen open port.
 
 Once you have a Node, you can join the Cluster.
 
 ```go
-cluster := pastry.NewCluster(node, credentials)
+cluster := wendy.NewCluster(node, credentials)
 ```
 
-NewCluster just creates a Cluster object, initialises the state tables and channels used to keep the algorithm concurrency-safe, and returns it. It requires that you specify the current Node and supply [Credentials](http://go.pkgdoc.org/secondbit.org/pastry#Credentials) for the Cluster.
+NewCluster just creates a Cluster object, initialises the state tables and channels used to keep the algorithm concurrency-safe, and returns it. It requires that you specify the current Node and supply [Credentials](http://godoc.org/secondbit.org/wendy#Credentials) for the Cluster.
 
-Credentials are an interface that Pastry defines to help control access to your clusters. Credentials could be whatever you want them to be: public/private keys, a single word or phrase, a rather large number... anything at all is fair game. The only rules for Credentials are as follows:
+Credentials are an interface that Wendy defines to help control access to your clusters. Credentials could be whatever you want them to be: public/private keys, a single word or phrase, a rather large number... anything at all is fair game. The only rules for Credentials are as follows:
 
 1. Calling `Marshal()` on any implementation of Credentials must return a slice of bytes.
 2. Calling `Valid([]byte)` on any implementation of Credentials must decide whether the specified slice of bytes should grant access to the Cluster (return true) or not (return false). The recommended way to do that is to attempt to unmarshal the byte slice into your Credentials implementation (returning false on error) and then comparing the resulting instance with your local instance. But there's nothing stopping you from just returning true, granting anyone who cares to connect full access to your Cluster. Like [PSN](http://en.wikipedia.org/wiki/PlayStation_Network_outage) does (*Zing!*)
@@ -79,46 +79,46 @@ defer cluster.Stop()
 
 ### Registering Handlers For Your Application
 
-Pastry offers several callbacks at various points in the process of exchanging messages within your Cluster. You can use these callbacks to register listeners within your application. These callbacks are simply instances of a type that fulfills the [pastry.Application](http://go.pkgdoc.org/secondbit.org/pastry#Application) interface and are subsequently registered to a cluster.
+Wendy offers several callbacks at various points in the process of exchanging messages within your Cluster. You can use these callbacks to register listeners within your application. These callbacks are simply instances of a type that fulfills the [wendy.Application](http://godoc.org/secondbit.org/wendy#Application) interface and are subsequently registered to a cluster.
 
 ```go
-type PastryApplication struct {
+type WendyApplication struct {
 }
 
-func (app *PastryApplication) OnError(err error) {
+func (app *WendyApplication) OnError(err error) {
 	panic(err.Error())
 }
 
-func (app *PastryApplication) OnDeliver(msg pastry.Message) {
+func (app *WendyApplication) OnDeliver(msg wendy.Message) {
 	fmt.Println("Received message: ", msg)
 }
 
-func (app *PastryApplication) OnForward(msg *pastry.Message, next pastry.NodeID) bool {
+func (app *WendyApplication) OnForward(msg *wendy.Message, next wendy.NodeID) bool {
 	fmt.Printf("Forwarding message %s to Node %s.", msg.ID, next)
 	return true // return false if you don't want the message forwarded
 }
 
-func (app *PastryApplication) OnNewLeaves(leaves []*pastry.Node) {
+func (app *WendyApplication) OnNewLeaves(leaves []*wendy.Node) {
 	fmt.Println("Leaf set changed: ", leaves)
 }
 
-func (app *PastryApplication) OnNodeJoin(node *pastry.Node) {
+func (app *WendyApplication) OnNodeJoin(node *wendy.Node) {
 	fmt.Println("Node joined: ", node.ID)
 }
 
-func (app *PastryApplication) OnNodeExit(node *pastry.Node) {
+func (app *WendyApplication) OnNodeExit(node *wendy.Node) {
 	fmt.Println("Node left: ", node.ID)
 }
 
-func (app *PastryApplication) OnHeartbeat(node *pastry.Node) {
+func (app *WendyApplication) OnHeartbeat(node *wendy.Node) {
 	fmt.Println("Received heartbeat from ", node.ID)
 }
 
-app := &PastryApplication{}
+app := &WendyApplication{}
 cluster.RegisterCallback(app)
 ```
 
-The methods will be invoked at the appropriate points in the lifecycle of the cluster. You should consult [the documentation](http://go.pkgdoc.org/secondbit.org/pastry#Application) for more information.
+The methods will be invoked at the appropriate points in the lifecycle of the cluster. You should consult [the documentation](http://godoc.org/secondbit.org/wendy#Application) for more information.
 
 ### Announcing Your Presence
 
@@ -134,9 +134,9 @@ When `Join()` is called, the Node will contact the specified Node and announce i
 
 ### Sending Messages
 
-Sending a message in Pastry is a little weird. Each message has an ID associated with it, which you can generate based on the contents of the message or some other key. Pastry doesn't care what the relationship between the message and the ID is (Pastry is perfectly happy with random message IDs, in fact), but applications built on Pastry sometimes dictate the terms of the message ID. All Pastry requires is that your message ID, like your Node IDs, has at least 16 bytes worth of data in it.
+Sending a message in Wendy is a little weird. Each message has an ID associated with it, which you can generate based on the contents of the message or some other key. Wendy doesn't care what the relationship between the message and the ID is (Wendy is perfectly happy with random message IDs, in fact), but applications built on Wendy sometimes dictate the terms of the message ID. All Wendy requires is that your message ID, like your Node IDs, has at least 16 bytes worth of data in it.
 
-Messages in Pastry aren't sent *to* something, they're sent *towards* something--their message ID. When a Node receives a Message, it checks to see if it knows about any Node with a NodeID closer to the MessageID than its own NodeID. If it does, it forwards the Message on to that Node. If it doesn't it considers the Message to be delivered. There are all sorts of algorithms in place to help the Message reach that delivery quicker, but they're not really the important bit. The important bit is that messages aren't sent *to* Nodes, they're sent *towards* their MessageID.
+Messages in Wendy aren't sent *to* something, they're sent *towards* something--their message ID. When a Node receives a Message, it checks to see if it knows about any Node with a NodeID closer to the MessageID than its own NodeID. If it does, it forwards the Message on to that Node. If it doesn't it considers the Message to be delivered. There are all sorts of algorithms in place to help the Message reach that delivery quicker, but they're not really the important bit. The important bit is that messages aren't sent *to* Nodes, they're sent *towards* their MessageID.
 
 Here's an example of routing a Message with a randomly generated ID (based on the `crypto/rand` package) through a Cluster:
 
@@ -146,7 +146,7 @@ _, err := rand.Read(b)
 if err != nil {
 	panic(err.Error())
 }
-id, err := pastry.NodeIDFromBytes(b)
+id, err := wendy.NodeIDFromBytes(b)
 if err != nil {
 	panic(err.Error())
 }
@@ -158,18 +158,19 @@ if err != nil {
 }
 ```
 
-You'll notice we set `purpose` in there to `byte(16)`. Purpose is a way of distinguishing between different types of Messages, and is useful when handling them. We only guarantee that bytes with values 16 and above will go unused by Pastry's own messages. To avoid collisions, you should only use bytes with values of 16 and above when defining your messages.
+You'll notice we set `purpose` in there to `byte(16)`. Purpose is a way of distinguishing between different types of Messages, and is useful when handling them. We only guarantee that bytes with values 16 and above will go unused by Wendy's own messages. To avoid collisions, you should only use bytes with values of 16 and above when defining your messages.
 
 We repeated that because it's kind of important.
 
 ## Contributing
 
-We'd love to see Pastry improve. There's a lot that can still be done with it, and we'd love some help figuring out how to automate some more complete tests for it.
+We'd love to see Wendy improve. There's a lot that can still be done with it, and we'd love some help figuring out how to automate some more complete tests for it.
 
-To contribute to Pastry:
+To contribute to Wendy:
 
 * **Fork** the repository
 * **Modify** your fork
+* Ensure your fork **passes all tests**
 * **Send** a pull request
 	* Bonus points if the pull request includes *what* you changed, *why* you changed it, and *has unit tests* attached.
 	* For the love of all that is holy, please use `go fmt` *before* you send the pull request.
@@ -180,27 +181,28 @@ We'll review it and merge it in if it's appropriate.
 
 We approached this pragmatically, so there are some differences between the Pastry specification (as we understand it) and our implementation. The end result should not be materially changed.
 
-* We *removed the concept of a Neighborhood Set*. The Neighborhood Set was intended to keep information on the proximity of Nodes. We opted to instead store the proximity information inside each Node object.
-* We *store every Node in the Routing Table*. The specification dictates that when two Nodes compete for the same space in the Routing Table, only the closest (based on proximity) is stored. We opted to store both, then *route* based on proximity (when routing a message, we select the Node with the closest proximity score). In clusters of sufficiently large size (thousands), this may create memory concerns, as we estimate that Nodes may occupy roughly a couple KB in memory. For our purposes, the memory cost isn't a concern, and it greatly simplifies the algorithm.
 * We introduced the concept of Regions. Regions are used to partition your Cluster and give preference to Nodes that are within the same Region. It is useful on cloud providers like EC2 to minimise traffic between regions, which tends to cost more than traffic on the local network. This is implemented as a raw multiplier on the proximity score of nodes, based on if the regions match or not. It should not materially affect the algorithm, outside the intended bias towards local traffic over global traffic.
 
 ## Known Bugs
 
-* If you should happen to have two Nodes in a Cluster who don't agree as to what time it is, it's possible to get them stuck in an infinite loop that saturates the network with messages. For the love of God, use NTP to make your Nodes agree what time it is. (*Note*: This is to prevent race conditions when two Nodes join simultaneously.)
-* In the event that: 1) a Node is added, 2) the Node receives a message *before* it has finished initialising its state tables, and 3) the Node, based on its partial implementation of the state tables, is the closest Node to the message ID, that Node will incorrectly assume it is the destination for the message when there *may* be a better suited Node in the network. Depending on network speeds and the size of the cluster, this period of potential-for-message-swallowing is expected to last, at most, a few seconds, and will only occur when a Node is added to the cluster. If, as per the previous bug, your Nodes don't agree on the time… well, God help you.
+* In the event that: 1) a Node is added, 2) the Node receives a message *before* it has finished initialising its state tables, and 3) the Node, based on its partial implementation of the state tables, is the closest Node to the message ID, that Node will incorrectly assume it is the destination for the message when there *may* be a better suited Node in the network. Depending on network speeds and the size of the cluster, this period of potential-for-message-swallowing is expected to last, at most, a few seconds, and will only occur when a Node is added to the cluster.
 * In the event that one of the two immediate neighbours (in the NodeID space) of the current Node leaves the cluster, the Node will have a hole in its leaf set until it next receives (or has a reason to request) state information from another Node. This should not affect the outcome of the routing process, but may lead to sub-optimal routing times.
+* We currently rely on the system clock for a few of our functions. If you (or NTP) change the clock in unexpected and significant ways, you will run into problems. Please see [issue 4](https://github.com/secondbit/wendy/issues/4) for more information.
+* Our Credentials implementation is currently vulnerable to man-in-the-middle and replay attacks. We are considering the best method for adding a handshake to the low-level TCP connection to better secure your traffic. See [issue 3](https://github.com/secondbit/wendy/issues/3) for more information or to weigh in on the discussion.
 
 ## Authors
 
-The following people contributed code that found its way into Pastry:
+The following people contributed code that found its way into Wendy:
 
 * Paddy Foran ([paddyforan](https://github.com/paddyforan))
 * Jesse McNelis ([jessta](https://github.com/jessta))
 * Evan Shaw ([edsrzf](https://github.com/edsrzf))
+* Alec Thomas ([alecthomas](https://github.com/alecthomas))
+* Graeme Humphries ([unit3](https://github.com/unit3))
 
 ## Contributors
 
-The following people contributed to the creation of Pastry through advice and support, not through code:
+The following people contributed to the creation of Wendy through advice and support, not through code:
 
 * [Matthew Turland](http://www.matthewturland.com) offered support and advice, and has been invaluable in bringing the software to fruition.
 * [Chris Hartjes](http://www.littlehart.net/atthekeyboard) offered feedback and advice on our testing strategies.
