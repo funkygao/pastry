@@ -1,4 +1,4 @@
-package wendy
+package pastry
 
 import (
 	"testing"

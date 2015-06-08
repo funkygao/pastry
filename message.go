@@ -1,4 +1,4 @@
-package wendy
+package pastry
 
 // Message represents the messages that are sent through the cluster of Nodes
 type Message struct {

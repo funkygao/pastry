@@ -34,4 +34,4 @@ About Credentials
 
 Credentials are an interface that is used to control access to your Cluster. Wendy provides the Passphrase implementation, which limits access to Nodes that set their Credentials to the same string. You can feel free to make your own--the only requirements are that you return a slice of bytes when the Marshal() function is called and that you return a boolean when the Valid([]byte) function is called, which should return true if the supplied slice of bytes can be unmarshaled to a valid instance of your Credentials implementation AND that valid instance should be granted access to this Cluster.
 */
-package wendy
+package pastry
