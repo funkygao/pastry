@@ -61,10 +61,12 @@ func newProximityCache() *proximityCache {
 
 // Cluster holds the information about the state of the network. It is the main interface to the distributed network of Nodes.
 type Cluster struct {
-	self               *Node
-	table              *routingTable
-	leafset            *leafSet
-	neighborhoodset    *neighborhoodSet
+	table           *routingTable
+	leafset         *leafSet
+	neighborhoodset *neighborhoodSet
+
+	self *Node
+
 	kill               chan bool
 	lastStateUpdate    time.Time
 	applications       []Application
@@ -210,8 +212,8 @@ func NewCluster(self *Node, credentials Credentials) *Cluster {
 		lastStateUpdate:    time.Now(),
 		applications:       []Application{},
 		log:                log.New(os.Stdout, "wendy("+self.ID.String()+") ", log.LstdFlags),
-		logLevel:           LogLevelWarn,
-		heartbeatFrequency: 300,
+		logLevel:           LogLevelDebug,
+		heartbeatFrequency: 30,
 		networkTimeout:     10,
 		credentials:        credentials,
 		joined:             false,
@@ -264,6 +266,7 @@ func (c *Cluster) Listen() error {
 		return err
 	}
 	defer ln.Close()
+
 	// save bound port back to Node in case where port is autoconfigured by OS
 	if c.self.Port == 0 {
 		c.debug("Port set to 0")
