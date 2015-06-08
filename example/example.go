@@ -1,15 +1,29 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
 	"github.com/funkygao/golib/debug"
 	"github.com/funkygao/pastry"
+	"github.com/funkygao/pretty"
 )
+
+var port int
 
 func init() {
 	debug.Debug = true
+
+	flag.IntVar(&port, "p", 1090, "port")
+	flag.Parse()
+}
+
+func format(v interface{}) interface{} {
+	if false {
+		return pretty.Formatter(v)
+	}
+	return v
 }
 
 func createNodeId() pastry.NodeID {
@@ -30,16 +44,24 @@ func main() {
 	}()
 
 	id := createNodeId()
-	debug.Debugf("%#v\n", id)
+	debug.Debugf("%# v\n", format(id))
 
-	node := pastry.NewNode(id, "localhost", "12.43.34.11", "home", 1090)
-	debug.Debugf("%#v\n", node)
+	node := pastry.NewNode(id, "localhost", "12.43.34.11", "home", port)
+	debug.Debugf("%# v\n", format(node))
 
 	credentials := pastry.Passphrase("we are here")
 	cluster := pastry.NewCluster(node, credentials)
-	debug.Debugf("%#v\n", cluster)
+	debug.Debugf("%# v\n", format(cluster))
 
-	cluster.Listen()
+	if err := cluster.Listen(); err != nil {
+		panic(err)
+	}
 	defer cluster.Stop()
+
+	if port != 1090 {
+		if err := cluster.Join("localhost", 1090); err != nil {
+			panic(err)
+		}
+	}
 
 }
