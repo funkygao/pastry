@@ -53,15 +53,15 @@ func main() {
 	cluster := pastry.NewCluster(node, credentials)
 	debug.Debugf("%# v\n", format(cluster))
 
-	if err := cluster.Listen(); err != nil {
-		panic(err)
-	}
-	defer cluster.Stop()
-
 	if port != 1090 {
 		if err := cluster.Join("localhost", 1090); err != nil {
 			panic(err)
 		}
 	}
+
+	if err := cluster.Listen(); err != nil {
+		panic(err)
+	}
+	defer cluster.Stop()
 
 }
