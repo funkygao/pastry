@@ -410,7 +410,7 @@ func (c *Cluster) sendHeartbeats() {
 		if _, set := sent[node.ID]; set {
 			continue
 		}
-		c.debug("Sending heartbeat to %s", node.ID)
+		c.debug("Sending heartbeat %+v to %s", msg, node.ID)
 		err := c.send(msg, node)
 		if err == deadNodeError {
 			err = c.remove(node.ID)

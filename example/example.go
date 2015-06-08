@@ -28,7 +28,9 @@ func format(v interface{}) interface{} {
 
 func createNodeId() pastry.NodeID {
 	hostname, _ := os.Hostname()
-	id, e := pastry.NodeIDFromBytes([]byte(hostname + " test server on mac"))
+	name := hostname + " test server on mac" + fmt.Sprintf("%d", port)
+	debug.Debugf("%s\n", name)
+	id, e := pastry.NodeIDFromBytes([]byte(name))
 	if e != nil {
 		panic(e)
 	}
@@ -57,6 +59,10 @@ func main() {
 		if err := cluster.Join("localhost", 1090); err != nil {
 			panic(err)
 		}
+
+		key, _ := pastry.NodeIDFromBytes([]byte("adfasf"))
+		node, err := cluster.Route(key)
+		debug.Debugf("%#v %#v\n", node, err)
 	}
 
 	if err := cluster.Listen(); err != nil {
