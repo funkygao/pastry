@@ -1,0 +1,25 @@
+# DHT
+- load balance
+- routing hops
+- join/leave/die/reborn
+- network locality
+- moving keys/replica
+- overlay robustness
+
+# pastry
+
+A DHT with geo- or network-locality: LRM
+
+1M nodes, routing max hop: 5
+
+Routing table size: 32*16+2L(L=16) = 544
+
+LeafSet L:
+- detect failures of their L by heartbeat
+- may be used for replica
+
+Neighborhood M:
+- used for populating R with close-by nodes
+
+
+# gossip
