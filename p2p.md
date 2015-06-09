@@ -21,5 +21,17 @@ LeafSet L:
 Neighborhood M:
 - used for populating R with close-by nodes
 
+## repair
+
+- L, eager
+- R, lazy, upon failure
+- M, eager
+
+
 
 # gossip
+
+
+# skipnet
+
+node name = com.wd.host1
