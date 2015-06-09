@@ -28,7 +28,7 @@ func format(v interface{}) interface{} {
 
 func createNodeId() pastry.NodeID {
 	hostname, _ := os.Hostname()
-	name := hostname + " test server on mac" + fmt.Sprintf("%d", port)
+	name := hostname + fmt.Sprintf("%d", port) + " test server on mac"
 	debug.Debugf("%s\n", name)
 	id, e := pastry.NodeIDFromBytes([]byte(name))
 	if e != nil {

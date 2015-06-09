@@ -24,6 +24,29 @@ const (
 	NODE_ANN               // Used when a Node broadcasts its presence
 )
 
+func purposeName(purpose byte) string {
+	switch purpose {
+	case NODE_ANN:
+		return "ann"
+	case NODE_JOIN:
+		return "join"
+	case NODE_EXIT:
+		return "exit"
+	case HEARTBEAT:
+		return "heartbeat"
+	case STAT_DATA:
+		return "stat_data"
+	case STAT_REQ:
+		return "stat_request"
+	case NODE_RACE:
+		return "race"
+	case NODE_REPR:
+		return "repair"
+	default:
+		return "unkown"
+	}
+}
+
 // String returns a string representation of a message.
 func (m *Message) String() string {
 	return m.Key.String() + ": " + string(m.Value)

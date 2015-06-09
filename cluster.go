@@ -3,15 +3,21 @@ package pastry
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/funkygao/golib/color"
 )
+
+var debugLock sync.Mutex
 
 type StateMask struct {
 	Mask byte
@@ -211,9 +217,9 @@ func NewCluster(self *Node, credentials Credentials) *Cluster {
 		kill:               make(chan bool),
 		lastStateUpdate:    time.Now(),
 		applications:       []Application{},
-		log:                log.New(os.Stdout, "wendy("+self.ID.String()+") ", log.LstdFlags),
+		log:                log.New(os.Stdout, "wendy("+self.ID.String()+") ", log.LstdFlags|log.Lshortfile),
 		logLevel:           LogLevelDebug,
-		heartbeatFrequency: 30,
+		heartbeatFrequency: 300,
 		networkTimeout:     10,
 		credentials:        credentials,
 		joined:             false,
@@ -459,7 +465,7 @@ func (c *Cluster) handleClient(conn net.Conn) {
 		}
 	}
 	conn.Write([]byte(`{"status": "Received."}`))
-	c.debug("Got message with purpose %v", msg.Purpose)
+	c.debug("Got message with purpose %v", purposeName(msg.Purpose))
 	msg.Hop = msg.Hop + 1
 	switch msg.Purpose {
 	case NODE_JOIN:
@@ -503,7 +509,7 @@ func (c *Cluster) send(msg Message, destination *Node) error {
 		return errors.New("Can't send from a nil node.")
 	}
 	address := c.GetIP(*destination)
-	c.debug("Sending message %s with purpose %d to %s", msg.Key, msg.Purpose, address)
+	c.debug("Sending message %s with purpose %s to %s", msg.Key, purposeName(msg.Purpose), address)
 	start := time.Now()
 	err := c.SendToIP(msg, address)
 	if err == nil {
@@ -529,7 +535,7 @@ func (c *Cluster) SendToIP(msg Message, address string) error {
 	if err != nil {
 		return err
 	}
-	c.debug("Sent message %s  with purpose %d to %s", msg.Key, msg.Purpose, address)
+	c.debug("Sent message %s  with purpose %s to %s", msg.Key, purposeName(msg.Purpose), address)
 	_, err = conn.Read(nil)
 	if err != nil {
 		if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
@@ -1047,7 +1053,27 @@ func (c *Cluster) get(id NodeID) (*Node, error) {
 
 func (c *Cluster) debug(format string, v ...interface{}) {
 	if c.logLevel <= LogLevelDebug {
-		c.log.Printf(format, v...)
+		pc, file, line, ok := runtime.Caller(1)
+		if !ok {
+			file = "<?>"
+			line = 0
+		} else {
+			if i := strings.LastIndex(file, "/"); i >= 0 {
+				file = file[i+1:]
+			}
+		}
+		fn := runtime.FuncForPC(pc).Name()
+		fnparts := strings.Split(fn, "/")
+		t := time.Now()
+		hour, min, sec := t.Clock()
+		nanosec := t.Nanosecond() / 1e3
+
+		debugLock.Lock()
+		fmt.Printf("wendy("+c.self.ID.String()+") : [%d:%d:%d.%04d] %s:%d(%s): %s\n",
+			hour, min, sec, nanosec,
+			file, line, color.Red(fnparts[len(fnparts)-1]),
+			fmt.Sprintf(format, v...))
+		debugLock.Unlock()
 	}
 }
 
