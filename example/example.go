@@ -38,6 +38,36 @@ func createNodeId() pastry.NodeID {
 	return id
 }
 
+type app struct{}
+
+func (this *app) OnError(err error) {
+	debug.Debugf("%s", err)
+}
+
+func (this *app) OnDeliver(msg pastry.Message) {
+	debug.Debugf("%s", msg.String())
+}
+
+func (this *app) OnForward(msg *pastry.Message, nextId pastry.NodeID) bool {
+	return false
+}
+
+func (this *app) OnNewLeaves(leafset []*pastry.Node) {
+	debug.Debugf("%+v", leafset[0])
+}
+
+func (this *app) OnNodeJoin(node pastry.Node) {
+	debug.Debugf("%+v", node)
+}
+
+func (this *app) OnNodeExit(node pastry.Node) {
+	debug.Debugf("%+v", node)
+}
+
+func (this *app) OnHeartbeat(node pastry.Node) {
+	debug.Debugf("%+v", node)
+}
+
 func main() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -48,26 +78,35 @@ func main() {
 	id := createNodeId()
 	debug.Debugf("%# v\n", format(id))
 
-	node := pastry.NewNode(id, "localhost", "12.43.34.11", "home", port)
-	debug.Debugf("%# v\n", format(node))
+	self := pastry.NewNode(id, "localhost", "12.43.34.11", "home", port)
+	debug.Debugf("%# v\n", format(self))
 
 	credentials := pastry.Passphrase("we are here")
-	cluster := pastry.NewCluster(node, credentials)
+	cluster := pastry.NewCluster(self, credentials)
+	app := &app{}
+	cluster.RegisterCallback(app)
 	debug.Debugf("%# v\n", format(cluster))
+	go startListener(cluster)
 
 	if port != 1090 {
 		if err := cluster.Join("localhost", 1090); err != nil {
 			panic(err)
 		}
 
-		key, _ := pastry.NodeIDFromBytes([]byte("adfasf"))
-		node, err := cluster.Route(key)
-		debug.Debugf("%#v %#v\n", node, err)
+		/*
+
+			key, _ := pastry.NodeIDFromBytes([]byte("adfasf"))
+			node, err := cluster.Route(key)
+			debug.Debugf("%#v %#v\n", node, err)*/
 	}
 
+	select {}
+
+}
+
+func startListener(cluster *pastry.Cluster) {
 	if err := cluster.Listen(); err != nil {
 		panic(err)
 	}
 	defer cluster.Stop()
-
 }

@@ -1,5 +1,9 @@
 package pastry
 
+import (
+	"fmt"
+)
+
 // Message represents the messages that are sent through the cluster of Nodes
 type Message struct {
 	Purpose     byte
@@ -49,7 +53,9 @@ func purposeName(purpose byte) string {
 
 // String returns a string representation of a message.
 func (m *Message) String() string {
-	return m.Key.String() + ": " + string(m.Value)
+	return fmt.Sprintf("Message{Purpose:%s, Sender:%+v, Key:%s, Value:%s, Credentials:%s, Lver:%d, Mver:%d, Rver:%d}",
+		purposeName(m.Purpose), m.Sender, m.Key, string(m.Value), string(m.Credentials),
+		m.LSVersion, m.NSVersion, m.RTVersion)
 }
 
 func (c *Cluster) NewMessage(purpose byte, key NodeID, value []byte) Message {

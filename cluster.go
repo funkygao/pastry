@@ -297,7 +297,7 @@ func (c *Cluster) Listen() error {
 				c.fanOutError(err)
 				return
 			}
-			c.debug("Connection received.")
+			c.debug("Connection received %v", conn.RemoteAddr().String())
 			ch <- conn
 		}
 	}(ln, connections)
@@ -366,6 +366,7 @@ func (c *Cluster) Route(key NodeID) (*Node, error) {
 	}
 	c.debug("Target not found in leaf set, checking routing table.")
 	target, err = c.table.route(key)
+	c.debug("%v %v", target, err)
 	if err != nil {
 		if _, ok := err.(IdentityError); ok {
 			c.debug("I'm the target. Delivering message %s", key)
@@ -379,6 +380,7 @@ func (c *Cluster) Route(key NodeID) (*Node, error) {
 		c.debug("Target acquired in routing table.")
 		return target, nil
 	}
+	c.debug("here")
 	return nil, nil
 }
 
@@ -458,6 +460,8 @@ func (c *Cluster) handleClient(conn net.Conn) {
 		c.warn("Credentials did not match. Supplied credentials: %s", msg.Credentials)
 		return
 	}
+
+	c.debug("msg: %s", msg.String())
 	if msg.Purpose != NODE_JOIN {
 		node, _ := c.get(msg.Sender.ID)
 		if node != nil {
@@ -466,7 +470,7 @@ func (c *Cluster) handleClient(conn net.Conn) {
 	}
 	conn.Write([]byte(`{"status": "Received."}`))
 	c.debug("Got message with purpose %v", purposeName(msg.Purpose))
-	msg.Hop = msg.Hop + 1
+	msg.Hop = msg.Hop + 1 // increment the hop
 	switch msg.Purpose {
 	case NODE_JOIN:
 		c.onNodeJoin(msg)
@@ -522,20 +526,20 @@ func (c *Cluster) send(msg Message, destination *Node) error {
 
 // SendToIP sends a message directly to an IP using the Wendy networking logic.
 func (c *Cluster) SendToIP(msg Message, address string) error {
-	c.debug("Sending message %s", string(msg.Value))
+	c.debug("Sending message %s to %s", msg.String(), address)
 	conn, err := net.DialTimeout("tcp", address, time.Duration(c.getNetworkTimeout())*time.Second)
 	if err != nil {
 		c.debug(err.Error())
 		return deadNodeError
 	}
 	defer conn.Close()
+
 	conn.SetDeadline(time.Now().Add(time.Duration(c.getNetworkTimeout()) * time.Second))
 	encoder := json.NewEncoder(conn)
 	err = encoder.Encode(msg)
 	if err != nil {
 		return err
 	}
-	c.debug("Sent message %s  with purpose %s to %s", msg.Key, purposeName(msg.Purpose), address)
 	_, err = conn.Read(nil)
 	if err != nil {
 		if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
@@ -559,6 +563,7 @@ func (c *Cluster) onNodeJoin(msg Message) {
 		Cols: []int{},
 	}
 	row := c.self.ID.CommonPrefixLen(msg.Key)
+	c.debug("common prefix:%d hop:%d", row, msg.Hop)
 	if msg.Hop == 1 {
 		// send only the matching routing table rows
 		for i := 0; i < row; i++ {
@@ -573,10 +578,13 @@ func (c *Cluster) onNodeJoin(msg Message) {
 			mask.Rows = append(mask.Rows, msg.Hop)
 		}
 	}
+	c.debug("mask:%+v, msg hop:%d", mask, msg.Hop)
 	next, err := c.Route(msg.Key)
 	if err != nil {
 		c.fanOutError(err)
 	}
+
+	c.debug("next: %+v", next)
 	eol := false
 	if next == nil {
 		// also send leaf set, if I'm the last node to get the message
@@ -735,8 +743,10 @@ func (c *Cluster) sendStateTables(node Node, tables StateMask, eol bool) error {
 	if err != nil {
 		return err
 	}
+
 	msg := c.NewMessage(STAT_DATA, c.self.ID, data)
 	target, err := c.get(node.ID)
+	c.debug("target: %+v, %v", target, err)
 	if err != nil {
 		if _, ok := err.(IdentityError); !ok && err != nodeNotFoundError {
 			return err
@@ -1069,7 +1079,7 @@ func (c *Cluster) debug(format string, v ...interface{}) {
 		nanosec := t.Nanosecond() / 1e3
 
 		debugLock.Lock()
-		fmt.Printf("wendy("+c.self.ID.String()+") : [%d:%d:%d.%04d] %s:%d(%s): %s\n",
+		fmt.Printf(c.self.ID.String()+" [%d:%d:%d.%04d] %s:%d(%s): %s\n",
 			hour, min, sec, nanosec,
 			file, line, color.Red(fnparts[len(fnparts)-1]),
 			fmt.Sprintf(format, v...))
