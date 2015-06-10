@@ -101,6 +101,7 @@ func TestClusterJoinTwo(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	one.SetColor("green")
 	one.debug("One is %s", one.self.ID)
 	oneCB := newTestCallback(t)
 	one.RegisterCallback(oneCB)
@@ -109,6 +110,7 @@ func TestClusterJoinTwo(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	two.SetColor("yellow")
 	two.debug("Two is %s", two.self.ID)
 	twoCB := newTestCallback(t)
 	two.RegisterCallback(twoCB)

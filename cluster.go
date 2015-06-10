@@ -66,6 +66,32 @@ type stateTables struct {
 	EOL             bool           `json:"eol,omitempty"`
 }
 
+func (this *stateTables) String() string {
+	rn := 0
+	for i := 0; i < 32; i++ {
+		for j := 0; j < 16; j++ {
+			if this.RoutingTable[i][j] != nil {
+				rn++
+			}
+		}
+	}
+	ln := 0
+	for i := 0; i < 2; i++ {
+		for j := 0; j < 16; j++ {
+			if this.LeafSet[i][j] != nil {
+				ln++
+			}
+		}
+	}
+	mn := 0
+	for i := 0; i < 32; i++ {
+		if this.NeighborhoodSet[i] != nil {
+			mn++
+		}
+	}
+	return fmt.Sprintf("stateTable{R:%d L:%d M:%d}", rn, ln, mn)
+}
+
 type proximityCache struct {
 	cache  map[NodeID]int64
 	ticker <-chan time.Time
@@ -99,26 +125,28 @@ type Cluster struct {
 	joined             bool
 	lock               *sync.RWMutex
 	proximityCache     *proximityCache
+
+	color string
+}
+
+func (c *Cluster) SetColor(color string) {
+	c.color = color
 }
 
 func (c *Cluster) newLeaves(leaves []*Node) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
-	c.debug("Sending newLeaves notifications.")
 	for i, app := range c.applications {
 		app.OnNewLeaves(leaves)
 		c.debug("Sent newLeaves notification %d of %d.", i+1, len(c.applications))
 	}
-	c.debug("Sent newLeaves notifications.")
 }
 
 func (c *Cluster) fanOutJoin(node Node) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	for _, app := range c.applications {
-		c.debug("Announcing node join.")
 		app.OnNodeJoin(node)
-		c.debug("Announced node join.")
 	}
 }
 
@@ -188,7 +216,7 @@ func (c *Cluster) String() string {
 }
 
 func (c *Cluster) LRM() string {
-	return fmt.Sprintf("L:%s\nR:%s\nM:%s\n", c.leafset.String(),
+	return fmt.Sprintf("L:%s R:%s M:%s", c.leafset.String(),
 		c.table.String(), c.neighborhoodset.String())
 }
 
@@ -330,7 +358,7 @@ func (c *Cluster) Listen() error {
 			go c.sendHeartbeats()
 			break
 		case conn := <-connections:
-			c.debug("Handling connection.")
+			c.debug("Handling connection...")
 			go c.handleClient(conn)
 			break
 		case <-c.proximityCache.ticker:
@@ -344,7 +372,6 @@ func (c *Cluster) Listen() error {
 
 // Send routes a message through the Cluster.
 func (c *Cluster) Send(msg Message) error {
-	c.debug("Getting target for message %s", msg.Key)
 	target, err := c.Route(msg.Key)
 	if err != nil {
 		return err
@@ -372,6 +399,7 @@ func (c *Cluster) Send(msg Message) error {
 
 // Route checks the leafSet and routingTable to see if there's an appropriate match for the NodeID. If there is a better match than the current Node, a pointer to that Node is returned. Otherwise, nil is returned (and the message should be delivered).
 func (c *Cluster) Route(key NodeID) (*Node, error) {
+	c.debug("route in LR for %s", key)
 	target, err := c.leafset.route(key)
 	if err != nil {
 		if _, ok := err.(IdentityError); ok {
@@ -388,7 +416,7 @@ func (c *Cluster) Route(key NodeID) (*Node, error) {
 	}
 	c.debug("Target not found in leaf set, checking routing table.")
 	target, err = c.table.route(key)
-	c.debug("target:%v, err:%v", target, err)
+	c.debug("target:%+v, err:%v", target, err)
 	if err != nil {
 		if _, ok := err.(IdentityError); ok {
 			c.debug("I'm the target. Delivering message %s", key)
@@ -402,7 +430,6 @@ func (c *Cluster) Route(key NodeID) (*Node, error) {
 		c.debug("Target acquired in routing table.")
 		return target, nil
 	}
-	c.debug("empty target and empty error")
 	return nil, nil
 }
 
@@ -488,7 +515,7 @@ func (c *Cluster) handleClient(conn net.Conn) {
 		return
 	}
 
-	c.debug("got msg: %s", msg.String())
+	//c.debug("got msg: %s", msg.String())
 	if msg.Purpose != NODE_JOIN {
 		node, _ := c.get(msg.Sender.ID)
 		if node != nil {
@@ -546,7 +573,9 @@ func (c *Cluster) send(msg Message, destination *Node) error {
 	err := c.SendToIP(msg, address)
 	if err == nil {
 		proximity := time.Since(start)
-		c.debug("proximity: %s %d", proximity, int64(proximity))
+		c.debug("%s %s proximity: %s", destination.ID.String(),
+			purposeName(msg.Purpose),
+			proximity)
 		destination.setProximity(int64(proximity))
 		destination.updateLastHeardFrom()
 	}
@@ -613,13 +642,13 @@ func (c *Cluster) onNodeJoin(msg Message) {
 		c.fanOutError(err)
 	}
 
-	c.debug("route for %s with next: %+v", msg.Key, next)
 	eol := false
 	if next == nil {
 		// also send leaf set, if I'm the last node to get the message
 		mask.Mask = mask.Mask | lS
 		eol = true
 	}
+	c.debug("route for %s with next: %+v", msg.Key, next)
 	err = c.sendStateTables(msg.Sender, mask, eol)
 	if err != nil {
 		if err != deadNodeError {
@@ -676,7 +705,7 @@ func (c *Cluster) onNodeExit(msg Message) {
 }
 
 func (c *Cluster) onStateReceived(msg Message) {
-	c.debug("")
+	c.debug("%s", purposeName(msg.Purpose))
 	err := c.insertMessage(msg)
 	if err != nil {
 		c.debug(err.Error())
@@ -689,7 +718,8 @@ func (c *Cluster) onStateReceived(msg Message) {
 		c.fanOutError(err)
 		return
 	}
-	c.debug("State received. EOL is %v, isJoined is %v.", state.EOL, c.isJoined())
+	c.debug("State received. EOL is %v, isJoined is %v, LRM: %s", state.EOL,
+		c.isJoined(), c.LRM())
 	if !c.isJoined() && state.EOL {
 		c.debug("Haven't announced presence yet... waiting %d seconds", (2 * c.getNetworkTimeout()))
 		time.Sleep(time.Duration(2*c.getNetworkTimeout()) * time.Second) // sleep
@@ -776,7 +806,6 @@ func (c *Cluster) sendStateTables(node Node, tables StateMask, eol bool) error {
 
 	msg := c.NewMessage(STAT_DATA, c.self.ID, data)
 	target, err := c.get(node.ID)
-	c.debug("target: %+v, err:%v", target, err)
 	if err != nil {
 		if _, ok := err.(IdentityError); !ok && err != nodeNotFoundError {
 			return err
@@ -827,7 +856,7 @@ func (c *Cluster) announcePresence() error {
 		if node == nil {
 			continue
 		}
-		c.debug("Saw node %s. rtVersion: %d\tlsVersion: %d\tnsVersion: %d", node.ID.String(), node.routingTableVersion, node.leafsetVersion, node.neighborhoodSetVersion)
+		c.debug("Saw node %s rtVersion: %d\tlsVersion: %d\tnsVersion: %d", node.ID.String(), node.routingTableVersion, node.leafsetVersion, node.neighborhoodSetVersion)
 		if _, set := sent[node.ID]; set {
 			c.debug("Skipping node %s, already sent announcement there.", node.ID.String())
 			continue
@@ -925,9 +954,7 @@ func (c *Cluster) updateProximity(node *Node) error {
 		if err != nil {
 			return err
 		}
-		c.debug("Proximity to %s checked.", node.ID)
 		c.cacheProximity(node.ID, node.getRawProximity())
-		c.debug("Proximity to %s cached.", node.ID)
 	}
 	return nil
 }
@@ -939,10 +966,11 @@ func (c *Cluster) insertMessage(msg Message) error {
 		c.debug("Error unmarshalling JSON: %s", err.Error())
 		return err
 	}
+	c.debug("LRM1: %s", c.LRM())
 	sender := &msg.Sender
 	c.debug("Updating versions for %s. RT:%d, LS:%d, NS:%d.", sender.ID.String(), msg.RTVersion, msg.LSVersion, msg.NSVersion)
 	sender.updateVersions(msg.RTVersion, msg.LSVersion, msg.NSVersion)
-	c.debug("state table: %+v", state)
+	c.debug("state table: %s", state.String())
 	err = c.insert(*sender, StateMask{Mask: all})
 	if err != nil {
 		return err
@@ -984,6 +1012,7 @@ func (c *Cluster) insertMessage(msg Message) error {
 			}
 		}
 	}
+	c.debug("LRM2: %s", c.LRM())
 	return nil
 }
 
@@ -998,9 +1027,7 @@ func (c *Cluster) insert(node Node, tables StateMask) error {
 
 	c.debug("Inserting node %s", node.ID)
 	if node.getRawProximity() <= 0 && (tables.includeNS() || tables.includeRT()) {
-		c.debug("Updating proximity")
 		c.updateProximity(&node)
-		c.debug("Updated proximity")
 		c.debug("Inserting node %s in routing table", node.ID)
 		resp, err := c.table.insertNode(node, node.getRawProximity())
 		if err != nil && err != rtDuplicateInsertError {
@@ -1111,7 +1138,18 @@ func (c *Cluster) debug(format string, v ...interface{}) {
 		nanosec := t.Nanosecond() / 1e3
 
 		debugLock.Lock()
-		fmt.Printf(c.self.ID.String()+" [%d:%d:%d.%04d] %s:%d(%s): %s\n",
+		var nodePrefix string = c.self.ID.String()
+		switch c.color {
+		case "red":
+			nodePrefix = color.Red(c.self.ID.String())
+		case "blue":
+			nodePrefix = color.Blue(c.self.ID.String())
+		case "yellow":
+			nodePrefix = color.Yellow(c.self.ID.String())
+		case "green":
+			nodePrefix = color.Green(c.self.ID.String())
+		}
+		fmt.Printf(nodePrefix+" [%d:%d:%d.%04d] %s:%d(%s): %s\n",
 			hour, min, sec, nanosec,
 			file, line, color.Red(fnparts[len(fnparts)-1]),
 			fmt.Sprintf(format, v...))

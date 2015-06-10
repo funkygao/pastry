@@ -3,9 +3,13 @@ package pastry
 import (
 	"errors"
 	"fmt"
+	"github.com/funkygao/golib/color"
 	"log"
 	"os"
+	"runtime"
+	"strings"
 	"sync"
+	"time"
 )
 
 type routingTable struct {
@@ -28,7 +32,16 @@ func newRoutingTable(self *Node) *routingTable {
 }
 
 func (t *routingTable) String() string {
-	return fmt.Sprintf("%+v", t.nodes)
+	s := ""
+	for i := 0; i < 32; i++ {
+		for j := 0; j < 16; j++ {
+			if t.nodes[i][j] != nil {
+				s += fmt.Sprintf("{row:%d, col:%d, node:%+v}", i, j,
+					t.nodes[i][j].ID.String())
+			}
+		}
+	}
+	return s
 }
 
 var rtDuplicateInsertError = errors.New("Node already exists in routing table.")
@@ -41,7 +54,6 @@ func (t *routingTable) insertValues(id NodeID, localIP, globalIP, region string,
 	rtVersion, lsVersion, nsVersion uint64, proximity int64) (*Node, error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	defer t.debug("%+v", t.nodes)
 
 	node := NewNode(id, localIP, globalIP, region, port)
 	node.updateVersions(rtVersion, lsVersion, nsVersion)
@@ -223,7 +235,28 @@ func (t *routingTable) export(rows, cols []int) [32][16]*Node {
 
 func (t *routingTable) debug(format string, v ...interface{}) {
 	if t.logLevel <= LogLevelDebug {
-		t.log.Printf(format, v...)
+		pc, file, line, ok := runtime.Caller(1)
+		if !ok {
+			file = "<?>"
+			line = 0
+		} else {
+			if i := strings.LastIndex(file, "/"); i >= 0 {
+				file = file[i+1:]
+			}
+		}
+		fn := runtime.FuncForPC(pc).Name()
+		fnparts := strings.Split(fn, "/")
+		t1 := time.Now()
+		hour, min, sec := t1.Clock()
+		nanosec := t1.Nanosecond() / 1e3
+
+		debugLock.Lock()
+
+		fmt.Printf(t.self.ID.String()+" [%d:%d:%d.%04d] %s:%d(%s): %s\n",
+			hour, min, sec, nanosec,
+			file, line, color.Red(fnparts[len(fnparts)-1]),
+			fmt.Sprintf(format, v...))
+		debugLock.Unlock()
 	}
 }
 

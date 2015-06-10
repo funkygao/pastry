@@ -40,3 +40,24 @@ send(msg, node) -> SendToIP(msg, hostPort)
 # skipnet
 
 node name = com.wd.host1
+
+
+
+    A                   N
+    |                   |
+    | join              |
+    |------------------>|
+    |                   |
+    |             state |
+    |<------------------|
+    |                   |
+    |                   |
+    | heartbeat         | to calculate proximity
+    |------------------>|
+    |                   |
+    |                   |
+    | announce          | 
+    |------------------>|-------------> all nodes in LRM
+    |                   |
+    |                   |
+    |                   |

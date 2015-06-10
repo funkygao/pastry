@@ -29,7 +29,14 @@ func newNeighborhoodSet(self *Node) *neighborhoodSet {
 var nsDuplicateInsertError = errors.New("Node already exists in neighborhood set.")
 
 func (n *neighborhoodSet) String() string {
-	return fmt.Sprintf("%+v", n.nodes)
+	s := ""
+	for i := 0; i < 32; i++ {
+		if n.nodes[i] == nil {
+			continue
+		}
+		s += fmt.Sprintf("%+v ", n.nodes[i].ID.String())
+	}
+	return s
 }
 
 func (n *neighborhoodSet) insertNode(node Node, proximity int64) (*Node, error) {
