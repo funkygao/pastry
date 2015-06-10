@@ -840,7 +840,7 @@ func (c *Cluster) sendRaceNotification(node Node, tables StateMask) error {
 }
 
 func (c *Cluster) announcePresence() error {
-	c.debug("Announcing presence...")
+	c.debug("Announcing presence to all nodes...")
 	state, err := c.dumpStateTables(StateMask{Mask: all})
 	if err != nil {
 		return err
@@ -968,7 +968,7 @@ func (c *Cluster) insertMessage(msg Message) error {
 	}
 	c.debug("LRM1: %s", c.LRM())
 	sender := &msg.Sender
-	c.debug("Updating versions for %s. RT:%d, LS:%d, NS:%d.", sender.ID.String(), msg.RTVersion, msg.LSVersion, msg.NSVersion)
+	c.debug("Updating versions for %s RT:%d, LS:%d, NS:%d.", sender.ID.String(), msg.RTVersion, msg.LSVersion, msg.NSVersion)
 	sender.updateVersions(msg.RTVersion, msg.LSVersion, msg.NSVersion)
 	c.debug("state table: %s", state.String())
 	err = c.insert(*sender, StateMask{Mask: all})
