@@ -282,10 +282,7 @@ func NewCluster(self *Node, credentials Credentials) *Cluster {
 func (c *Cluster) Stop() {
 	c.debug("Sending graceful exit message.")
 	msg := c.NewMessage(NODE_EXIT, c.self.ID, []byte{})
-	nodes := c.table.list([]int{}, []int{})
-	nodes = append(nodes, c.leafset.list()...)
-	nodes = append(nodes, c.neighborhoodset.list()...)
-	for _, node := range nodes {
+	for _, node := range c.allNodes() {
 		err := c.send(msg, node)
 		if err != nil {
 			c.fanOutError(err)
