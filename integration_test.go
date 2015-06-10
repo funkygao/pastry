@@ -86,7 +86,7 @@ func makeCluster(idBytes string) (*Cluster, error) {
 	}
 	node := NewNode(id, "127.0.0.1", "127.0.0.1", "testing", 0)
 	cluster := NewCluster(node, nil)
-	cluster.SetHeartbeatFrequency(10)
+	cluster.SetHeartbeatFrequency(100)
 	cluster.SetNetworkTimeout(1)
 	cluster.SetLogLevel(LogLevelDebug)
 	return cluster, nil
@@ -104,6 +104,7 @@ func TestClusterJoinTwo(t *testing.T) {
 	one.debug("One is %s", one.self.ID)
 	oneCB := newTestCallback(t)
 	one.RegisterCallback(oneCB)
+
 	two, err := makeCluster("this is some other Node for testing purposes only.")
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -130,6 +131,8 @@ func TestClusterJoinTwo(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
+	time.Sleep(20 * time.Second)
+
 	ticker := time.NewTicker(3 * time.Duration(one.getNetworkTimeout()) * time.Second)
 	defer ticker.Stop()
 	select {

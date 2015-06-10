@@ -21,19 +21,40 @@ func newLeafSet(self *Node) *leafSet {
 		self:     self,
 		left:     [16]*Node{},
 		right:    [16]*Node{},
-		log:      log.New(os.Stdout, "wendy#leafSet("+self.ID.String()+")", log.LstdFlags),
+		log:      log.New(os.Stdout, "wendy#leafSet("+self.ID.String()+")", log.LstdFlags|log.Lshortfile),
 		logLevel: LogLevelDebug,
 		lock:     new(sync.RWMutex),
 	}
 }
 
+func (l *leafSet) String() string {
+	s := "left:"
+	for _, n := range l.left {
+		if n == nil {
+			continue
+		}
+		s += n.ID.String() + " "
+	}
+	s += "right:"
+	for _, n := range l.right {
+		if n == nil {
+			continue
+		}
+		s += n.ID.String() + " "
+	}
+	return s
+}
+
 var lsDuplicateInsertError = errors.New("Node already exists in leaf set.")
 
 func (l *leafSet) insertNode(node Node) (*Node, error) {
-	return l.insertValues(node.ID, node.LocalIP, node.GlobalIP, node.Region, node.Port, node.routingTableVersion, node.leafsetVersion, node.neighborhoodSetVersion)
+	return l.insertValues(node.ID, node.LocalIP, node.GlobalIP, node.Region,
+		node.Port, node.routingTableVersion, node.leafsetVersion,
+		node.neighborhoodSetVersion)
 }
 
-func (l *leafSet) insertValues(id NodeID, localIP, globalIP, region string, port int, rTVersion, lSVersion, nSVersion uint64) (*Node, error) {
+func (l *leafSet) insertValues(id NodeID, localIP, globalIP, region string,
+	port int, rTVersion, lSVersion, nSVersion uint64) (*Node, error) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	node := NewNode(id, localIP, globalIP, region, port)

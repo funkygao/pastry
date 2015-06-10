@@ -2,6 +2,7 @@ package pastry
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -20,12 +21,16 @@ func newNeighborhoodSet(self *Node) *neighborhoodSet {
 		self:     self,
 		nodes:    [32]*Node{},
 		log:      log.New(os.Stdout, "wendy#neighborhoodSet("+self.ID.String()+")", log.LstdFlags),
-		logLevel: LogLevelWarn,
+		logLevel: LogLevelDebug,
 		lock:     new(sync.RWMutex),
 	}
 }
 
 var nsDuplicateInsertError = errors.New("Node already exists in neighborhood set.")
+
+func (n *neighborhoodSet) String() string {
+	return fmt.Sprintf("%+v", n.nodes)
+}
 
 func (n *neighborhoodSet) insertNode(node Node, proximity int64) (*Node, error) {
 	return n.insertValues(node.ID, node.LocalIP, node.GlobalIP, node.Region, node.Port, node.routingTableVersion, node.leafsetVersion, node.neighborhoodSetVersion, proximity)

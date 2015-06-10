@@ -45,6 +45,7 @@ func (this *app) OnError(err error) {
 }
 
 func (this *app) OnDeliver(msg pastry.Message) {
+	// msg sent out to cluster
 	debug.Debugf("%s", msg.String())
 }
 
@@ -69,11 +70,6 @@ func (this *app) OnHeartbeat(node pastry.Node) {
 }
 
 func main() {
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Println("recover:", r)
-		}
-	}()
 
 	id := createNodeId()
 	debug.Debugf("%# v\n", format(id))
@@ -92,6 +88,8 @@ func main() {
 		if err := cluster.Join("localhost", 1090); err != nil {
 			panic(err)
 		}
+
+		debug.Debugf("%s\n", cluster.LRM())
 
 		/*
 

@@ -44,6 +44,21 @@ func (m StateMask) includeNS() bool {
 	return m.Mask == (m.Mask | nS)
 }
 
+func (m StateMask) String() string {
+	mask := ""
+	if m.includeLS() {
+		mask += "L"
+	}
+	if m.includeNS() {
+		mask += "M"
+	}
+	if m.includeRT() {
+		mask += "R"
+	}
+
+	return fmt.Sprintf("%s rows:%+v, cols:%+v", mask, m.Rows, m.Cols)
+}
+
 type stateTables struct {
 	RoutingTable    *[32][16]*Node `json:"rt,omitempty"`
 	LeafSet         *[2][16]*Node  `json:"ls,omitempty"`
@@ -67,14 +82,14 @@ func newProximityCache() *proximityCache {
 
 // Cluster holds the information about the state of the network. It is the main interface to the distributed network of Nodes.
 type Cluster struct {
-	table           *routingTable
-	leafset         *leafSet
-	neighborhoodset *neighborhoodSet
-
 	self *Node
 
-	kill               chan bool
-	lastStateUpdate    time.Time
+	leafset         *leafSet
+	table           *routingTable
+	neighborhoodset *neighborhoodSet
+
+	kill               chan struct{}
+	lastStateUpdate    time.Time // state table
 	applications       []Application
 	log                *log.Logger
 	logLevel           int
@@ -144,7 +159,7 @@ func (c *Cluster) cacheProximity(id NodeID, proximity int64) {
 func (c *Cluster) getCachedProximity(id NodeID) int64 {
 	c.proximityCache.RLock()
 	defer c.proximityCache.RUnlock()
-	if proximity, set := c.proximityCache.cache[id]; set {
+	if proximity, present := c.proximityCache.cache[id]; present {
 		return proximity
 	}
 	return -1
@@ -170,6 +185,11 @@ func (c *Cluster) ID() NodeID {
 // String returns a string representation of the Cluster, in the form of its ID.
 func (c *Cluster) String() string {
 	return c.ID().String()
+}
+
+func (c *Cluster) LRM() string {
+	return fmt.Sprintf("L:%s\nR:%s\nM:%s\n", c.leafset.String(),
+		c.table.String(), c.neighborhoodset.String())
 }
 
 // GetIP returns the IP address to use when communicating with a Node.
@@ -214,13 +234,13 @@ func NewCluster(self *Node, credentials Credentials) *Cluster {
 		table:              newRoutingTable(self),
 		leafset:            newLeafSet(self),
 		neighborhoodset:    newNeighborhoodSet(self),
-		kill:               make(chan bool),
+		kill:               make(chan struct{}),
 		lastStateUpdate:    time.Now(),
 		applications:       []Application{},
 		log:                log.New(os.Stdout, "wendy("+self.ID.String()+") ", log.LstdFlags|log.Lshortfile),
 		logLevel:           LogLevelDebug,
-		heartbeatFrequency: 300,
-		networkTimeout:     10,
+		heartbeatFrequency: 300, // 5m
+		networkTimeout:     10,  // 10s
 		credentials:        credentials,
 		joined:             false,
 		lock:               new(sync.RWMutex),
@@ -251,7 +271,7 @@ func (c *Cluster) Stop() {
 // Unlike Stop, Kill immediately disconnects the Node without sending a message to let other Nodes know of its exit.
 func (c *Cluster) Kill() {
 	c.debug("Exiting the cluster.")
-	c.kill <- true
+	close(c.kill)
 }
 
 // RegisterCallback allows anything that fulfills the Application interface to be hooked into the Wendy's callbacks.
@@ -275,7 +295,6 @@ func (c *Cluster) Listen() error {
 
 	// save bound port back to Node in case where port is autoconfigured by OS
 	if c.self.Port == 0 {
-		c.debug("Port set to 0")
 		colonPos := strings.LastIndex(ln.Addr().String(), ":")
 		if colonPos == -1 {
 			c.debug("OS returned an address without a port.")
@@ -289,6 +308,7 @@ func (c *Cluster) Listen() error {
 		c.debug("Setting port to %d", port)
 		c.self.Port = int(port)
 	}
+
 	connections := make(chan net.Conn)
 	go func(ln net.Listener, ch chan net.Conn) {
 		for {
@@ -297,7 +317,7 @@ func (c *Cluster) Listen() error {
 				c.fanOutError(err)
 				return
 			}
-			c.debug("Connection received %v", conn.RemoteAddr().String())
+			c.debug("Connection received from %v", conn.RemoteAddr().String())
 			ch <- conn
 		}
 	}(ln, connections)
@@ -333,11 +353,13 @@ func (c *Cluster) Send(msg Message) error {
 		c.debug("Couldn't find a target. Delivering message %s", msg.Key)
 		if msg.Purpose > NODE_ANN {
 			c.deliver(msg)
+		} else {
+			c.debug("noop deliver %s", msg.String())
 		}
 		return nil
 	}
-	forward := c.forward(msg, target.ID)
-	if forward {
+
+	if c.forward(msg, target.ID) {
 		err = c.send(msg, target)
 		if err == deadNodeError {
 			err = c.remove(target.ID)
@@ -366,7 +388,7 @@ func (c *Cluster) Route(key NodeID) (*Node, error) {
 	}
 	c.debug("Target not found in leaf set, checking routing table.")
 	target, err = c.table.route(key)
-	c.debug("%v %v", target, err)
+	c.debug("target:%v, err:%v", target, err)
 	if err != nil {
 		if _, ok := err.(IdentityError); ok {
 			c.debug("I'm the target. Delivering message %s", key)
@@ -380,7 +402,7 @@ func (c *Cluster) Route(key NodeID) (*Node, error) {
 		c.debug("Target acquired in routing table.")
 		return target, nil
 	}
-	c.debug("here")
+	c.debug("empty target and empty error")
 	return nil, nil
 }
 
@@ -405,20 +427,25 @@ func (c *Cluster) fanOutError(err error) {
 	}
 }
 
-func (c *Cluster) sendHeartbeats() {
-	msg := c.NewMessage(HEARTBEAT, c.self.ID, []byte{})
+func (c *Cluster) allNodes() []*Node {
 	nodes := c.table.list([]int{}, []int{})
 	nodes = append(nodes, c.leafset.list()...)
 	nodes = append(nodes, c.neighborhoodset.list()...)
+	return nodes
+}
+
+func (c *Cluster) sendHeartbeats() {
+	msg := c.NewMessage(HEARTBEAT, c.self.ID, []byte{})
 	sent := map[NodeID]bool{}
-	for _, node := range nodes {
+	for _, node := range c.allNodes() {
 		if node == nil {
 			continue
 		}
-		if _, set := sent[node.ID]; set {
+		if _, present := sent[node.ID]; present {
 			continue
 		}
-		c.debug("Sending heartbeat %+v to %s", msg, node.ID)
+
+		c.debug("Sending heartbeat %s to %s", msg, node.ID)
 		err := c.send(msg, node)
 		if err == deadNodeError {
 			err = c.remove(node.ID)
@@ -461,15 +488,15 @@ func (c *Cluster) handleClient(conn net.Conn) {
 		return
 	}
 
-	c.debug("msg: %s", msg.String())
+	c.debug("got msg: %s", msg.String())
 	if msg.Purpose != NODE_JOIN {
 		node, _ := c.get(msg.Sender.ID)
 		if node != nil {
 			node.updateLastHeardFrom()
 		}
 	}
-	conn.Write([]byte(`{"status": "Received."}`))
-	c.debug("Got message with purpose %v", purposeName(msg.Purpose))
+	conn.Write([]byte(`{"status": "Received."}`)) // write back response ASAP to calculate rtt
+
 	msg.Hop = msg.Hop + 1 // increment the hop
 	switch msg.Purpose {
 	case NODE_JOIN:
@@ -513,11 +540,13 @@ func (c *Cluster) send(msg Message, destination *Node) error {
 		return errors.New("Can't send from a nil node.")
 	}
 	address := c.GetIP(*destination)
-	c.debug("Sending message %s with purpose %s to %s", msg.Key, purposeName(msg.Purpose), address)
+	c.debug("Sending message %s with purpose %s to %s",
+		msg.Key, purposeName(msg.Purpose), address)
 	start := time.Now()
 	err := c.SendToIP(msg, address)
 	if err == nil {
 		proximity := time.Since(start)
+		c.debug("proximity: %s %d", proximity, int64(proximity))
 		destination.setProximity(int64(proximity))
 		destination.updateLastHeardFrom()
 	}
@@ -526,7 +555,7 @@ func (c *Cluster) send(msg Message, destination *Node) error {
 
 // SendToIP sends a message directly to an IP using the Wendy networking logic.
 func (c *Cluster) SendToIP(msg Message, address string) error {
-	c.debug("Sending message %s to %s", msg.String(), address)
+	//c.debug("Sending message %s to %s", msg.String(), address)
 	conn, err := net.DialTimeout("tcp", address, time.Duration(c.getNetworkTimeout())*time.Second)
 	if err != nil {
 		c.debug(err.Error())
@@ -552,11 +581,11 @@ func (c *Cluster) SendToIP(msg Message, address string) error {
 	return err
 }
 
-// Our message handlers!
-
-// A node wants to join the cluster. We need to route its message as we normally would, but we should also send it our state tables as appropriate.
+// A node wants to join the cluster.
+// We need to route its message as we normally would, but we
+// should also send it our state tables as appropriate.
 func (c *Cluster) onNodeJoin(msg Message) {
-	c.debug("\033[4;31mNode %s joined!\033[0m", msg.Key)
+	c.debug("\033[4;32mNode %s join\033[0m", msg.Key)
 	mask := StateMask{
 		Mask: rT,
 		Rows: []int{},
@@ -578,13 +607,13 @@ func (c *Cluster) onNodeJoin(msg Message) {
 			mask.Rows = append(mask.Rows, msg.Hop)
 		}
 	}
-	c.debug("mask:%+v, msg hop:%d", mask, msg.Hop)
+	c.debug("mask:%s, msg hop:%d", mask, msg.Hop)
 	next, err := c.Route(msg.Key)
 	if err != nil {
 		c.fanOutError(err)
 	}
 
-	c.debug("next: %+v", next)
+	c.debug("route for %s with next: %+v", msg.Key, next)
 	eol := false
 	if next == nil {
 		// also send leaf set, if I'm the last node to get the message
@@ -606,7 +635,7 @@ func (c *Cluster) onNodeJoin(msg Message) {
 
 // A node has joined the cluster. We need to decide if it belongs in our state tables and if the nodes in the state tables it sends us belong in our state tables. If the version of our state tables it sends to us doesn't match our local version, we need to resend our state tables to prevent a race condition.
 func (c *Cluster) onNodeAnnounce(msg Message) {
-	c.debug("\0333[4;31mNode %s announced its presence!\033[0m", msg.Key)
+	c.debug("\033[4;33mNode %s announced its presence!\033[0m", msg.Key)
 	conflicts := byte(0)
 	if c.self.leafsetVersion > msg.LSVersion {
 		c.debug("Expected LSVersion %d, got %d", c.self.leafsetVersion, msg.LSVersion)
@@ -647,6 +676,7 @@ func (c *Cluster) onNodeExit(msg Message) {
 }
 
 func (c *Cluster) onStateReceived(msg Message) {
+	c.debug("")
 	err := c.insertMessage(msg)
 	if err != nil {
 		c.debug(err.Error())
@@ -662,7 +692,7 @@ func (c *Cluster) onStateReceived(msg Message) {
 	c.debug("State received. EOL is %v, isJoined is %v.", state.EOL, c.isJoined())
 	if !c.isJoined() && state.EOL {
 		c.debug("Haven't announced presence yet... waiting %d seconds", (2 * c.getNetworkTimeout()))
-		time.Sleep(time.Duration(2*c.getNetworkTimeout()) * time.Second)
+		time.Sleep(time.Duration(2*c.getNetworkTimeout()) * time.Second) // sleep
 		err = c.announcePresence()
 		if err != nil {
 			c.fanOutError(err)
@@ -746,7 +776,7 @@ func (c *Cluster) sendStateTables(node Node, tables StateMask, eol bool) error {
 
 	msg := c.NewMessage(STAT_DATA, c.self.ID, data)
 	target, err := c.get(node.ID)
-	c.debug("target: %+v, %v", target, err)
+	c.debug("target: %+v, err:%v", target, err)
 	if err != nil {
 		if _, ok := err.(IdentityError); !ok && err != nodeNotFoundError {
 			return err
@@ -790,12 +820,10 @@ func (c *Cluster) announcePresence() error {
 	if err != nil {
 		return err
 	}
+
 	msg := c.NewMessage(NODE_ANN, c.self.ID, data)
-	nodes := c.table.list([]int{}, []int{})
-	nodes = append(nodes, c.leafset.list()...)
-	nodes = append(nodes, c.neighborhoodset.list()...)
 	sent := map[NodeID]bool{}
-	for _, node := range nodes {
+	for _, node := range c.allNodes() {
 		if node == nil {
 			continue
 		}
@@ -805,7 +833,9 @@ func (c *Cluster) announcePresence() error {
 			continue
 		}
 		c.debug("Announcing presence to %s", node.ID)
-		c.debug("Node: %s\trt: %d\tls: %d\tns: %d", node.ID.String(), node.routingTableVersion, node.leafsetVersion, node.neighborhoodSetVersion)
+		c.debug("Node: %s\trt:%d\tls:%d\tns:%d", node.ID.String(),
+			node.routingTableVersion, node.leafsetVersion,
+			node.neighborhoodSetVersion)
 		msg.LSVersion = node.leafsetVersion
 		msg.RTVersion = node.routingTableVersion
 		msg.NSVersion = node.neighborhoodSetVersion
@@ -910,8 +940,9 @@ func (c *Cluster) insertMessage(msg Message) error {
 		return err
 	}
 	sender := &msg.Sender
-	c.debug("Updating versions for %s. RT: %d, LS: %d, NS: %d.", sender.ID.String(), msg.RTVersion, msg.LSVersion, msg.NSVersion)
+	c.debug("Updating versions for %s. RT:%d, LS:%d, NS:%d.", sender.ID.String(), msg.RTVersion, msg.LSVersion, msg.NSVersion)
 	sender.updateVersions(msg.RTVersion, msg.LSVersion, msg.NSVersion)
+	c.debug("state table: %+v", state)
 	err = c.insert(*sender, StateMask{Mask: all})
 	if err != nil {
 		return err
@@ -964,12 +995,13 @@ func (c *Cluster) insert(node Node, tables StateMask) error {
 		c.debug("Skipping inserting myself.")
 		return nil
 	}
+
 	c.debug("Inserting node %s", node.ID)
 	if node.getRawProximity() <= 0 && (tables.includeNS() || tables.includeRT()) {
 		c.debug("Updating proximity")
 		c.updateProximity(&node)
 		c.debug("Updated proximity")
-		c.debug("Inserting node %s in routing table.", node.ID)
+		c.debug("Inserting node %s in routing table", node.ID)
 		resp, err := c.table.insertNode(node, node.getRawProximity())
 		if err != nil && err != rtDuplicateInsertError {
 			c.err("Error inserting node: %s", err.Error())

@@ -2,6 +2,7 @@ package pastry
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -19,10 +20,15 @@ func newRoutingTable(self *Node) *routingTable {
 	return &routingTable{
 		self:     self,
 		nodes:    [32][16]*Node{},
-		log:      log.New(os.Stdout, "wendy#routingTable("+self.ID.String()+")", log.LstdFlags),
+		log:      log.New(os.Stdout, "wendy#routingTable("+self.ID.String()+")", log.LstdFlags|log.Lshortfile),
 		logLevel: LogLevelDebug,
 		lock:     new(sync.RWMutex),
 	}
+
+}
+
+func (t *routingTable) String() string {
+	return fmt.Sprintf("%+v", t.nodes)
 }
 
 var rtDuplicateInsertError = errors.New("Node already exists in routing table.")
@@ -31,9 +37,12 @@ func (t *routingTable) insertNode(node Node, proximity int64) (*Node, error) {
 	return t.insertValues(node.ID, node.LocalIP, node.GlobalIP, node.Region, node.Port, node.routingTableVersion, node.leafsetVersion, node.neighborhoodSetVersion, proximity)
 }
 
-func (t *routingTable) insertValues(id NodeID, localIP, globalIP, region string, port int, rtVersion, lsVersion, nsVersion uint64, proximity int64) (*Node, error) {
+func (t *routingTable) insertValues(id NodeID, localIP, globalIP, region string, port int,
+	rtVersion, lsVersion, nsVersion uint64, proximity int64) (*Node, error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
+	defer t.debug("%+v", t.nodes)
+
 	node := NewNode(id, localIP, globalIP, region, port)
 	node.updateVersions(rtVersion, lsVersion, nsVersion)
 	node.setProximity(proximity)
@@ -47,12 +56,17 @@ func (t *routingTable) insertValues(id NodeID, localIP, globalIP, region string,
 	}
 	if t.nodes[row][col] != nil {
 		if node.ID.Equals(t.nodes[row][col].ID) {
-			t.debug("Node %s already in routing table. Versions before insert:\nrouting table: %d\nleaf set: %d\nneighborhood set: %d\n", t.nodes[row][col].ID.String(), t.nodes[row][col].routingTableVersion, t.nodes[row][col].leafsetVersion, t.nodes[row][col].neighborhoodSetVersion)
+			t.debug("Node %s already in routing table. Versions before insert:\nrouting table: %d\nleaf set: %d\nneighborhood set: %d\n",
+				t.nodes[row][col].ID.String(),
+				t.nodes[row][col].routingTableVersion,
+				t.nodes[row][col].leafsetVersion,
+				t.nodes[row][col].neighborhoodSetVersion)
 			node.updateVersions(t.nodes[row][col].routingTableVersion, t.nodes[row][col].leafsetVersion, t.nodes[row][col].neighborhoodSetVersion)
 			t.nodes[row][col] = node
 			t.debug("Versions after insert:\nrouting table: %d\nleaf set: %d\nneighborhood set: %d\n", t.nodes[row][col].routingTableVersion, t.nodes[row][col].leafsetVersion, t.nodes[row][col].neighborhoodSetVersion)
 			return nil, rtDuplicateInsertError
 		}
+
 		// keep the node that has the closest proximity
 		if t.self.Proximity(t.nodes[row][col]) > t.self.Proximity(node) {
 			t.nodes[row][col] = node

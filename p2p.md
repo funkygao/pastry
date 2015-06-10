@@ -28,6 +28,11 @@ Neighborhood M:
 - M, eager
 
 
+sendHeartbeats() -> send()
+sendStateTables(node, tables, eol) -> send()
+sendRaceNotification(node, tables) -> send()
+Send(msg) -> send()
+send(msg, node) -> SendToIP(msg, hostPort)
 
 # gossip
 
