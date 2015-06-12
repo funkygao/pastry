@@ -70,7 +70,6 @@ func (this *app) OnHeartbeat(node pastry.Node) {
 }
 
 func main() {
-
 	id := createNodeId()
 	debug.Debugf("%# v\n", format(id))
 
@@ -82,6 +81,13 @@ func main() {
 	app := &app{}
 	cluster.RegisterCallback(app)
 	debug.Debugf("%# v\n", format(cluster))
+	switch port {
+	case 1091:
+		cluster.SetColor("blue")
+	case 1092:
+		cluster.SetColor("green")
+	}
+
 	go startListener(cluster)
 
 	if port != 1090 {

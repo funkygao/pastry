@@ -67,6 +67,9 @@ type stateTables struct {
 }
 
 func (this *stateTables) String() string {
+	if this.RoutingTable == nil || this.LeafSet == nil || this.NeighborhoodSet == nil {
+		return ""
+	}
 	rn := 0
 	for i := 0; i < 32; i++ {
 		for j := 0; j < 16; j++ {
