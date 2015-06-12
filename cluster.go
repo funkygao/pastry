@@ -472,7 +472,7 @@ func (c *Cluster) sendHeartbeats() {
 			continue
 		}
 
-		c.debug("Sending heartbeat %s to %s", msg, node.ID)
+		c.debug("Sending heartbeat %s to %s", msg.String(), node.ID)
 		err := c.send(msg, node)
 		if err == deadNodeError {
 			err = c.remove(node.ID)
@@ -645,6 +645,7 @@ func (c *Cluster) onNodeJoin(msg Message) {
 	eol := false
 	if next == nil {
 		// also send leaf set, if I'm the last node to get the message
+        // means I'm closest node to this message
 		mask.Mask = mask.Mask | lS
 		eol = true
 	}

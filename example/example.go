@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"time"
 
@@ -29,7 +31,7 @@ func format(v interface{}) interface{} {
 
 func createNodeId() pastry.NodeID {
 	hostname, _ := os.Hostname()
-	name := hostname + fmt.Sprintf("%d %d", port, port)
+	name := fmt.Sprintf("%d %d", port, port) + "on host:" + hostname
 	debug.Debugf("%s\n", name)
 	id, e := pastry.NodeIDFromBytes([]byte(name))
 	if e != nil {
@@ -101,14 +103,36 @@ func main() {
 			panic(err)
 		}
 
-		/*
-
-			key, _ := pastry.NodeIDFromBytes([]byte("adfasf"))
-			node, err := cluster.Route(key)
-			debug.Debugf("%#v %#v\n", node, err)*/
 	}
 
-	select {}
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Printf("key to route> ")
+		text, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		text = text[:len(text)-1] // strip EOL
+		if text == "" {
+			continue
+		}
+
+		fmt.Printf("Your key: %s\n", text)
+
+		key, err := pastry.NodeIDFromBytes([]byte(text))
+		if err != nil {
+            fmt.Printf("shit: %s", err)
+			continue
+		}
+
+		msg := cluster.NewMessage(byte(19), key, []byte("we are here"))
+		err = cluster.Send(msg)
+        if err != nil {
+            println(err)
+        }
+	}
 
 }
 
@@ -117,4 +141,10 @@ func startListener(cluster *pastry.Cluster) {
 		panic(err)
 	}
 	defer cluster.Stop()
+}
+
+func inData() []byte {
+	fmt.Print("input key to send>")
+	data, _ := ioutil.ReadAll(os.Stdin)
+	return data
 }
