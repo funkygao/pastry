@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/funkygao/golib/debug"
 	"github.com/funkygao/pastry"
@@ -28,7 +29,7 @@ func format(v interface{}) interface{} {
 
 func createNodeId() pastry.NodeID {
 	hostname, _ := os.Hostname()
-	name := hostname + fmt.Sprintf("%d", port) + " test server on mac"
+	name := hostname + fmt.Sprintf("%d %d", port, port)
 	debug.Debugf("%s\n", name)
 	id, e := pastry.NodeIDFromBytes([]byte(name))
 	if e != nil {
@@ -71,16 +72,13 @@ func (this *app) OnHeartbeat(node pastry.Node) {
 
 func main() {
 	id := createNodeId()
-	debug.Debugf("%# v\n", format(id))
 
 	self := pastry.NewNode(id, "localhost", "12.43.34.11", "home", port)
-	debug.Debugf("%# v\n", format(self))
 
 	credentials := pastry.Passphrase("we are here")
 	cluster := pastry.NewCluster(self, credentials)
 	app := &app{}
 	cluster.RegisterCallback(app)
-	debug.Debugf("%# v\n", format(cluster))
 	switch port {
 	case 1091:
 		cluster.SetColor("blue")
@@ -90,12 +88,18 @@ func main() {
 
 	go startListener(cluster)
 
+	go func() {
+		ticker := time.NewTicker(time.Second * 10)
+		for _ = range ticker.C {
+			debug.Debugf("%s", cluster.LRM())
+		}
+
+	}()
+
 	if port != 1090 {
 		if err := cluster.Join("localhost", 1090); err != nil {
 			panic(err)
 		}
-
-		debug.Debugf("%s\n", cluster.LRM())
 
 		/*
 
