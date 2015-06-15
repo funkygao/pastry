@@ -1,3 +1,10 @@
+# Hashtable
+
+- put(key, value), get(key), delete(key)
+- O(1)
+- resolve key collision through chaining or rehashing
+
+
 # DHT
 - load balance
 - routing hops
@@ -8,8 +15,21 @@
 
 # pastry
 
+- scalable distributed immutable object location service
+- a ring based overlay network taking into account proximity
+- applications
+  - PAST
+    s3 alike storage system
+  - SCRIBE
+    pubsub
+
+
 Pastry, a generic peer-to-peer object location and routing scheme, based on a 
 self-organizing overlay network of nodes connected to the Internet. 
+
+DHT + 16叉前缀树
+
+用处：resource allocation/load balance/object location
 
 Pastry is completely decentralized, fault-resilient, scalable, and reliable. 
 Moreover, Pastry has good route locality properties.

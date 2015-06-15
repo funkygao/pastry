@@ -68,14 +68,14 @@ func (t *routingTable) insertValues(id NodeID, localIP, globalIP, region string,
 	}
 	if t.nodes[row][col] != nil {
 		if node.ID.Equals(t.nodes[row][col].ID) {
-			t.debug("Node %s already in routing table. Versions before insert:\nrouting table: %d\nleaf set: %d\nneighborhood set: %d\n",
+			t.debug("Node %s already in routing table. Versions before insert: routing table: %d leaf set: %d neighborhood set: %d",
 				t.nodes[row][col].ID.String(),
 				t.nodes[row][col].routingTableVersion,
 				t.nodes[row][col].leafsetVersion,
 				t.nodes[row][col].neighborhoodSetVersion)
 			node.updateVersions(t.nodes[row][col].routingTableVersion, t.nodes[row][col].leafsetVersion, t.nodes[row][col].neighborhoodSetVersion)
 			t.nodes[row][col] = node
-			t.debug("Versions after insert:\nrouting table: %d\nleaf set: %d\nneighborhood set: %d\n", t.nodes[row][col].routingTableVersion, t.nodes[row][col].leafsetVersion, t.nodes[row][col].neighborhoodSetVersion)
+			t.debug("Versions after insert: routing table: %d leaf set: %d neighborhood set: %d", t.nodes[row][col].routingTableVersion, t.nodes[row][col].leafsetVersion, t.nodes[row][col].neighborhoodSetVersion)
 			return nil, rtDuplicateInsertError
 		}
 
@@ -130,6 +130,7 @@ func (t *routingTable) route(id NodeID) (*Node, error) {
 		return t.nodes[row][col], nil
 	}
 	diff := t.self.ID.Diff(id)
+	t.debug("%d", diff)
 	for scan_row := row; scan_row < len(t.nodes); scan_row++ {
 		for c, n := range t.nodes[scan_row] {
 			if c == int(t.self.ID.Digit(row)) {
@@ -140,6 +141,7 @@ func (t *routingTable) route(id NodeID) (*Node, error) {
 			}
 			entry_diff := n.ID.Diff(id).Cmp(diff)
 			if entry_diff == -1 || (entry_diff == 0 && !t.self.ID.Less(n.ID)) {
+				t.debug("%d", entry_diff)
 				return n, nil
 			}
 		}

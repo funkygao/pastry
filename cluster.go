@@ -285,7 +285,13 @@ func NewCluster(self *Node, credentials Credentials) *Cluster {
 func (c *Cluster) Stop() {
 	c.debug("Sending graceful exit message.")
 	msg := c.NewMessage(NODE_EXIT, c.self.ID, []byte{})
+	sent := map[NodeID]bool{}
 	for _, node := range c.allNodes() {
+		if _, present := sent[node.ID]; present {
+			continue
+		}
+
+		sent[node.ID] = true
 		err := c.send(msg, node)
 		if err != nil {
 			c.fanOutError(err)
@@ -427,7 +433,7 @@ func (c *Cluster) Route(key NodeID) (*Node, error) {
 		}
 	}
 	if target != nil {
-		c.debug("Target acquired in routing table.")
+		c.debug("Target acquired in routing table: %s", target.ID.String())
 		return target, nil
 	}
 	return nil, nil
@@ -645,7 +651,7 @@ func (c *Cluster) onNodeJoin(msg Message) {
 	eol := false
 	if next == nil {
 		// also send leaf set, if I'm the last node to get the message
-        // means I'm closest node to this message
+		// means I'm closest node to this message
 		mask.Mask = mask.Mask | lS
 		eol = true
 	}

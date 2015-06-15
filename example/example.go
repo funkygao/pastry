@@ -53,7 +53,8 @@ func (this *app) OnDeliver(msg pastry.Message) {
 }
 
 func (this *app) OnForward(msg *pastry.Message, nextId pastry.NodeID) bool {
-	return false
+	debug.Debugf("forward to %s for %s", nextId.String(), msg.String())
+	return true
 }
 
 func (this *app) OnNewLeaves(leafset []*pastry.Node) {
@@ -118,20 +119,23 @@ func main() {
 		if text == "" {
 			continue
 		}
-
-		fmt.Printf("Your key: %s\n", text)
+		if text == "exit" {
+			cluster.Stop()
+			break
+		}
 
 		key, err := pastry.NodeIDFromBytes([]byte(text))
 		if err != nil {
-            fmt.Printf("shit: %s", err)
+			fmt.Printf("shit: %s\n", err)
 			continue
 		}
 
+		fmt.Printf("Your key: %s\n", key)
 		msg := cluster.NewMessage(byte(19), key, []byte("we are here"))
 		err = cluster.Send(msg)
-        if err != nil {
-            println(err)
-        }
+		if err != nil {
+			println(err)
+		}
 	}
 
 }
