@@ -8,9 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/funkygao/golib/rand"
+	"github.com/funkygao/pastry"
 	"github.com/funkygao/peter"
-	pastry "secondbit.org/wendy"
 )
 
 var (
@@ -33,7 +32,7 @@ func dieIfError(err error) {
 }
 
 func pub() {
-	id, _ := pastry.NodeIDFromBytes(rand.RandomByteSlice(20))
+	id, _ := pastry.NodeIDFromBytes([]byte(strings.Repeat("pub", 20)))
 	p := peter.New(id, "127.0.0.1", "127.0.0.1", "home", 1234)
 	go p.Listen()
 	reader := bufio.NewReader(os.Stdin)
@@ -62,7 +61,7 @@ func pub() {
 }
 
 func sub() {
-	id, _ := pastry.NodeIDFromBytes(rand.RandomByteSlice(20))
+	id, _ := pastry.NodeIDFromBytes([]byte(strings.Repeat("sub", 20)))
 	p := peter.New(id, "127.0.0.1", "127.0.0.1", "home", 1235)
 	go p.Listen()
 	defer p.Stop()
