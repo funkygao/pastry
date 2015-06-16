@@ -579,9 +579,6 @@ func (c *Cluster) send(msg Message, destination *Node) error {
 	err := c.SendToIP(msg, address)
 	if err == nil {
 		proximity := time.Since(start)
-		c.debug("%s %s proximity: %s", destination.ID.String(),
-			purposeName(msg.Purpose),
-			proximity)
 		destination.setProximity(int64(proximity))
 		destination.updateLastHeardFrom()
 	}

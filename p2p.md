@@ -23,6 +23,14 @@
   - SCRIBE
     pubsub
 
+why cannot each node knows whole world?
+each node must have connection with (n-1)*n/2 other nodes
+n=0.1M => conns=5   billion => 5G * (4+2) = 30G mem
+n=  1M => conns=500 billion => 3T mem
+
+
+log16(N)
+
 
 Pastry, a generic peer-to-peer object location and routing scheme, based on a 
 self-organizing overlay network of nodes connected to the Internet. 
