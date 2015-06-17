@@ -130,7 +130,6 @@ func (t *routingTable) route(id NodeID) (*Node, error) {
 		return t.nodes[row][col], nil
 	}
 	diff := t.self.ID.Diff(id)
-	t.debug("%d", diff)
 	for scan_row := row; scan_row < len(t.nodes); scan_row++ {
 		for c, n := range t.nodes[scan_row] {
 			if c == int(t.self.ID.Digit(row)) {
